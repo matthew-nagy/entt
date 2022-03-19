@@ -53837,6 +53837,9 @@ public:
         return resource.use_count();
     }
 
+    std::shared_ptr<resource_type> get_shared(){
+    return resource;
+
 private:
     std::shared_ptr<resource_type> resource;
 };
