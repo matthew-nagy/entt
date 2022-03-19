@@ -53838,8 +53838,8 @@ public:
     }
 
     std::shared_ptr<resource_type> get_shared(){
-    return resource;
-
+        return resource;
+    }
 private:
     std::shared_ptr<resource_type> resource;
 };
