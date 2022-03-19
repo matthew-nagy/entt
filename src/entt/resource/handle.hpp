@@ -183,6 +183,14 @@ public:
         return resource.use_count();
     }
 
+    /**
+     * @brief Returns the underlying shared pointer, to mesh with non-entt system
+     * @return The shared pointer used by this resource
+     */
+     [[nodiscard]] std::shared_ptr<Resource>& get_shared() ENTT_NOEXCEPT{
+         return resource;
+     }
+
 private:
     std::shared_ptr<Resource> resource;
 };
