@@ -9,11 +9,13 @@
 #include "../config/config.h"
 #include "../core/any.hpp"
 #include "../core/fwd.hpp"
+#include "../core/iterator.hpp"
 #include "../core/type_info.hpp"
 #include "../core/type_traits.hpp"
 #include "../core/utility.hpp"
 #include "adl_pointer.hpp"
 #include "ctx.hpp"
+#include "fwd.hpp"
 #include "node.hpp"
 #include "range.hpp"
 #include "type_traits.hpp"
@@ -154,7 +156,7 @@ class meta_any {
     using vtable_type = void(const operation, const any &, void *);
 
     template<typename Type>
-    static void basic_vtable([[maybe_unused]] const operation op, [[maybe_unused]] const any &from, [[maybe_unused]] void *to) {
+    static void basic_vtable([[maybe_unused]] const operation op, [[maybe_unused]] const any &value, [[maybe_unused]] void *other) {
         static_assert(std::is_same_v<std::remove_reference_t<std::remove_const_t<Type>>, Type>, "Invalid type");
 
         if constexpr(!std::is_void_v<Type>) {
@@ -162,21 +164,21 @@ class meta_any {
             case operation::deref:
                 if constexpr(is_meta_pointer_like_v<Type>) {
                     if constexpr(std::is_function_v<std::remove_const_t<typename std::pointer_traits<Type>::element_type>>) {
-                        *static_cast<meta_any *>(to) = any_cast<Type>(from);
+                        *static_cast<meta_any *>(other) = any_cast<Type>(value);
                     } else if constexpr(!std::is_same_v<std::remove_const_t<typename std::pointer_traits<Type>::element_type>, void>) {
-                        using in_place_type = decltype(adl_meta_pointer_like<Type>::dereference(any_cast<const Type &>(from)));
-                        static_cast<meta_any *>(to)->emplace<in_place_type>(adl_meta_pointer_like<Type>::dereference(any_cast<const Type &>(from)));
+                        using in_place_type = decltype(adl_meta_pointer_like<Type>::dereference(any_cast<const Type &>(value)));
+                        static_cast<meta_any *>(other)->emplace<in_place_type>(adl_meta_pointer_like<Type>::dereference(any_cast<const Type &>(value)));
                     }
                 }
                 break;
             case operation::seq:
                 if constexpr(is_complete_v<meta_sequence_container_traits<Type>>) {
-                    *static_cast<meta_sequence_container *>(to) = {std::in_place_type<Type>, std::move(const_cast<any &>(from))};
+                    *static_cast<meta_sequence_container *>(other) = {std::in_place_type<Type>, std::move(const_cast<any &>(value))};
                 }
                 break;
             case operation::assoc:
                 if constexpr(is_complete_v<meta_associative_container_traits<Type>>) {
-                    *static_cast<meta_associative_container *>(to) = {std::in_place_type<Type>, std::move(const_cast<any &>(from))};
+                    *static_cast<meta_associative_container *>(other) = {std::in_place_type<Type>, std::move(const_cast<any &>(value))};
                 }
                 break;
             }
@@ -281,21 +283,15 @@ public:
         return *this;
     }
 
-    /**
-     * @brief Returns the type of the underlying object.
-     * @return The type of the underlying object, if any.
-     */
+    /*! @copydoc any::type */
     [[nodiscard]] inline meta_type type() const ENTT_NOEXCEPT;
 
-    /**
-     * @brief Returns an opaque pointer to the contained instance.
-     * @return An opaque pointer the contained instance, if any.
-     */
+    /*! @copydoc any::data */
     [[nodiscard]] const void *data() const ENTT_NOEXCEPT {
         return storage.data();
     }
 
-    /*! @copydoc data */
+    /*! @copydoc any::data */
     [[nodiscard]] void *data() ENTT_NOEXCEPT {
         return storage.data();
     }
@@ -467,12 +463,7 @@ public:
         return false;
     }
 
-    /**
-     * @brief Replaces the contained object by creating a new instance directly.
-     * @tparam Type Type of object to use to initialize the wrapper.
-     * @tparam Args Types of arguments to use to construct the new instance.
-     * @param args Parameters to use to construct the instance.
-     */
+    /*! @copydoc any::emplace */
     template<typename Type, typename... Args>
     void emplace(Args &&...args) {
         release();
@@ -481,21 +472,13 @@ public:
         node = internal::meta_node<std::remove_const_t<std::remove_reference_t<Type>>>::resolve();
     }
 
-    /**
-     * @brief Copy assigns a value to the contained object without replacing it.
-     * @param other The value to assign to the contained object.
-     * @return True in case of success, false otherwise.
-     */
+    /*! @copydoc any::assign */
     bool assign(const meta_any &other);
 
-    /**
-     * @brief Move assigns a value to the contained object without replacing it.
-     * @param other The value to assign to the contained object.
-     * @return True in case of success, false otherwise.
-     */
+    /*! @copydoc any::assign */
     bool assign(meta_any &&other);
 
-    /*! @brief Destroys contained object */
+    /*! @copydoc any::reset */
     void reset() {
         release();
         vtable = &basic_vtable<void>;
@@ -508,15 +491,17 @@ public:
      * @return A sequence container proxy for the underlying object.
      */
     [[nodiscard]] meta_sequence_container as_sequence_container() ENTT_NOEXCEPT {
+        any detached = storage.as_ref();
         meta_sequence_container proxy;
-        vtable(operation::seq, storage.as_ref(), &proxy);
+        vtable(operation::seq, detached, &proxy);
         return proxy;
     }
 
     /*! @copydoc as_sequence_container */
     [[nodiscard]] meta_sequence_container as_sequence_container() const ENTT_NOEXCEPT {
+        any detached = storage.as_ref();
         meta_sequence_container proxy;
-        vtable(operation::seq, storage.as_ref(), &proxy);
+        vtable(operation::seq, detached, &proxy);
         return proxy;
     }
 
@@ -525,15 +510,17 @@ public:
      * @return An associative container proxy for the underlying object.
      */
     [[nodiscard]] meta_associative_container as_associative_container() ENTT_NOEXCEPT {
+        any detached = storage.as_ref();
         meta_associative_container proxy;
-        vtable(operation::assoc, storage.as_ref(), &proxy);
+        vtable(operation::assoc, detached, &proxy);
         return proxy;
     }
 
     /*! @copydoc as_associative_container */
     [[nodiscard]] meta_associative_container as_associative_container() const ENTT_NOEXCEPT {
+        any detached = storage.as_ref();
         meta_associative_container proxy;
-        vtable(operation::assoc, storage.as_ref(), &proxy);
+        vtable(operation::assoc, detached, &proxy);
         return proxy;
     }
 
@@ -556,26 +543,24 @@ public:
         return !(node == nullptr);
     }
 
-    /**
-     * @brief Checks if two wrappers differ in their content.
-     * @param other Wrapper with which to compare.
-     * @return False if the two objects differ in their content, true otherwise.
-     */
+    /*! @copydoc any::operator== */
     [[nodiscard]] bool operator==(const meta_any &other) const {
         return (!node && !other.node) || (node && other.node && *node->info == *other.node->info && storage == other.storage);
     }
 
-    /**
-     * @brief Aliasing constructor.
-     * @return A wrapper that shares a reference to an unmanaged object.
-     */
+    /*! @copydoc any::as_ref */
     [[nodiscard]] meta_any as_ref() ENTT_NOEXCEPT {
         return meta_any{*this, storage.as_ref()};
     }
 
-    /*! @copydoc as_ref */
+    /*! @copydoc any::as_ref */
     [[nodiscard]] meta_any as_ref() const ENTT_NOEXCEPT {
         return meta_any{*this, storage.as_ref()};
+    }
+
+    /*! @copydoc any::owner */
+    [[nodiscard]] bool owner() const ENTT_NOEXCEPT {
+        return storage.owner();
     }
 
 private:
@@ -744,7 +729,7 @@ struct meta_data {
 
     /**
      * @brief Returns the number of setters available.
-     * @return The number of arguments accepted by the member function.
+     * @return The number of setters available.
      */
     [[nodiscard]] size_type arity() const ENTT_NOEXCEPT {
         return node->arity;
@@ -773,8 +758,7 @@ struct meta_data {
      * @brief Sets the value of a given variable.
      *
      * It must be possible to cast the instance to the parent type of the data
-     * member. Otherwise, invoking the setter results in an undefined
-     * behavior.<br/>
+     * member.<br/>
      * The type of the value is such that a cast or conversion to the type of
      * the variable is possible. Otherwise, invoking the setter does nothing.
      *
@@ -792,7 +776,7 @@ struct meta_data {
      * @brief Gets the value of a given variable.
      *
      * It must be possible to cast the instance to the parent type of the data
-     * member. Otherwise, invoking the getter results in an undefined behavior.
+     * member.
      *
      * @param instance An opaque instance of the underlying type.
      * @return A wrapper containing the value of the underlying variable.
@@ -903,8 +887,7 @@ struct meta_func {
      * conversion to the required types is possible. Otherwise, an empty and
      * thus invalid wrapper is returned.<br/>
      * It must be possible to cast the instance to the parent type of the member
-     * function. Otherwise, invoking the underlying function results in an
-     * undefined behavior.
+     * function.
      *
      * @param instance An opaque instance of the underlying type.
      * @param args Parameters to use to invoke the function.
@@ -966,7 +949,7 @@ private:
 /*! @brief Opaque wrapper for types. */
 class meta_type {
     template<auto Member, typename Pred>
-    const auto *lookup(meta_any *const args, const typename internal::meta_type_node::size_type sz, Pred pred) const {
+    [[nodiscard]] std::decay_t<decltype(std::declval<internal::meta_type_node>().*Member)> lookup(meta_any *const args, const typename internal::meta_type_node::size_type sz, Pred pred) const {
         std::decay_t<decltype(node->*Member)> candidate{};
         size_type extent{sz + 1u};
         bool ambiguous{};
@@ -1245,8 +1228,7 @@ public:
      * @brief Invokes a function given an identifier, if possible.
      *
      * It must be possible to cast the instance to the parent type of the member
-     * function. Otherwise, invoking the underlying function results in an
-     * undefined behavior.
+     * function.
      *
      * @sa meta_func::invoke
      *
@@ -1258,6 +1240,11 @@ public:
      */
     meta_any invoke(const id_type id, meta_handle instance, meta_any *const args, const size_type sz) const {
         const auto *candidate = lookup<&node_type::func>(args, sz, [id](const auto *curr) { return curr->id == id; });
+
+        for(auto it = base().begin(), last = base().end(); it != last && !candidate; ++it) {
+            candidate = it->lookup<&node_type::func>(args, sz, [id](const auto *curr) { return curr->id == id; });
+        }
+
         return candidate ? candidate->invoke(std::move(instance), args) : meta_any{};
     }
 
@@ -1282,8 +1269,7 @@ public:
      * @brief Sets the value of a given variable.
      *
      * It must be possible to cast the instance to the parent type of the data
-     * member. Otherwise, invoking the setter results in an undefined
-     * behavior.<br/>
+     * member.<br/>
      * The type of the value is such that a cast or conversion to the type of
      * the variable is possible. Otherwise, invoking the setter does nothing.
      *
@@ -1303,7 +1289,7 @@ public:
      * @brief Gets the value of a given variable.
      *
      * It must be possible to cast the instance to the parent type of the data
-     * member. Otherwise, invoking the getter results in an undefined behavior.
+     * member.
      *
      * @param id Unique identifier.
      * @param instance An opaque instance of the underlying type.
@@ -1453,7 +1439,7 @@ inline bool meta_any::assign(meta_any &&other) {
 }
 
 /*! @brief Opaque iterator for sequence containers. */
-class meta_sequence_container::meta_iterator {
+class meta_sequence_container::meta_iterator final {
     enum class operation : std::uint8_t {
         incr,
         deref
@@ -1462,13 +1448,13 @@ class meta_sequence_container::meta_iterator {
     using vtable_type = void(const operation, const any &, void *);
 
     template<typename It>
-    static void basic_vtable(const operation op, const any &from, void *to) {
+    static void basic_vtable(const operation op, const any &value, void *other) {
         switch(op) {
         case operation::incr:
-            ++any_cast<It &>(const_cast<any &>(from));
+            ++any_cast<It &>(const_cast<any &>(value));
             break;
         case operation::deref:
-            static_cast<meta_any *>(to)->emplace<typename std::iterator_traits<It>::reference>(*any_cast<const It &>(from));
+            static_cast<meta_any *>(other)->emplace<typename std::iterator_traits<It>::reference>(*any_cast<const It &>(value));
             break;
         }
     }
@@ -1478,9 +1464,9 @@ public:
     using difference_type = std::ptrdiff_t;
     /*! @brief Type of elements returned by the iterator. */
     using value_type = meta_any;
-    /*! @brief Pointer type, `void` on purpose. */
-    using pointer = void;
-    /*! @brief Reference type, it is **not** an actual reference. */
+    /*! @brief Pointer type, it's a _safe_ temporary object. */
+    using pointer = input_iterator_pointer<value_type>;
+    /*! @brief Reference type, it's **not** an actual reference. */
     using reference = value_type;
     /*! @brief Iterator category. */
     using iterator_category = std::input_iterator_tag;
@@ -1494,7 +1480,7 @@ public:
      * @param iter The actual iterator with which to build the meta iterator.
      */
     template<typename It>
-    meta_iterator(It iter)
+    explicit meta_iterator(It iter) ENTT_NOEXCEPT
         : vtable{&basic_vtable<It>},
           handle{std::move(iter)} {}
 
@@ -1507,6 +1493,32 @@ public:
     meta_iterator operator++(int) ENTT_NOEXCEPT {
         meta_iterator orig = *this;
         return ++(*this), orig;
+    }
+
+    /**
+     * @brief Indirection operator for accessing the pointed opaque object.
+     * @return The element to which the iterator points.
+     */
+    [[nodiscard]] reference operator*() const {
+        meta_any other;
+        vtable(operation::deref, handle, &other);
+        return other;
+    }
+
+    /**
+     * @brief Access operator for accessing the pointed opaque object.
+     * @return The element to which the iterator points.
+     */
+    [[nodiscard]] pointer operator->() const {
+        return operator*();
+    }
+
+    /**
+     * @brief Returns false if an iterator is invalid, true otherwise.
+     * @return False if the iterator is invalid, true otherwise.
+     */
+    [[nodiscard]] explicit operator bool() const ENTT_NOEXCEPT {
+        return static_cast<bool>(handle);
     }
 
     /**
@@ -1525,24 +1537,6 @@ public:
      */
     [[nodiscard]] bool operator!=(const meta_iterator &other) const ENTT_NOEXCEPT {
         return !(*this == other);
-    }
-
-    /**
-     * @brief Indirection operator.
-     * @return The element to which the iterator points.
-     */
-    [[nodiscard]] reference operator*() const {
-        meta_any other;
-        vtable(operation::deref, handle, &other);
-        return other;
-    }
-
-    /**
-     * @brief Returns false if an iterator is invalid, true otherwise.
-     * @return False if the iterator is invalid, true otherwise.
-     */
-    [[nodiscard]] explicit operator bool() const ENTT_NOEXCEPT {
-        return static_cast<bool>(handle);
     }
 
     /**
@@ -1645,7 +1639,7 @@ inline meta_sequence_container::iterator meta_sequence_container::erase(iterator
 }
 
 /*! @brief Opaque iterator for associative containers. */
-class meta_associative_container::meta_iterator {
+class meta_associative_container::meta_iterator final {
     enum class operation : std::uint8_t {
         incr,
         deref
@@ -1654,18 +1648,18 @@ class meta_associative_container::meta_iterator {
     using vtable_type = void(const operation, const any &, void *);
 
     template<bool KeyOnly, typename It>
-    static void basic_vtable(const operation op, const any &from, void *to) {
+    static void basic_vtable(const operation op, const any &value, void *other) {
         switch(op) {
         case operation::incr:
-            ++any_cast<It &>(const_cast<any &>(from));
+            ++any_cast<It &>(const_cast<any &>(value));
             break;
         case operation::deref:
-            const auto &it = any_cast<const It &>(from);
+            const auto &it = any_cast<const It &>(value);
             if constexpr(KeyOnly) {
-                static_cast<std::pair<meta_any, meta_any> *>(to)->first.emplace<decltype(*it)>(*it);
+                static_cast<std::pair<meta_any, meta_any> *>(other)->first.emplace<decltype(*it)>(*it);
             } else {
-                static_cast<std::pair<meta_any, meta_any> *>(to)->first.emplace<decltype((it->first))>(it->first);
-                static_cast<std::pair<meta_any, meta_any> *>(to)->second.emplace<decltype((it->second))>(it->second);
+                static_cast<std::pair<meta_any, meta_any> *>(other)->first.emplace<decltype((it->first))>(it->first);
+                static_cast<std::pair<meta_any, meta_any> *>(other)->second.emplace<decltype((it->second))>(it->second);
             }
             break;
         }
@@ -1676,9 +1670,9 @@ public:
     using difference_type = std::ptrdiff_t;
     /*! @brief Type of elements returned by the iterator. */
     using value_type = std::pair<meta_any, meta_any>;
-    /*! @brief Pointer type, `void` on purpose. */
-    using pointer = void;
-    /*! @brief Reference type, it is **not** an actual reference. */
+    /*! @brief Pointer type, it's a _safe_ temporary object. */
+    using pointer = input_iterator_pointer<value_type>;
+    /*! @brief Reference type, it's **not** an actual reference. */
     using reference = value_type;
     /*! @brief Iterator category. */
     using iterator_category = std::input_iterator_tag;
@@ -1693,7 +1687,7 @@ public:
      * @param iter The actual iterator with which to build the meta iterator.
      */
     template<bool KeyOnly, typename It>
-    meta_iterator(std::integral_constant<bool, KeyOnly>, It iter)
+    meta_iterator(std::integral_constant<bool, KeyOnly>, It iter) ENTT_NOEXCEPT
         : vtable{&basic_vtable<KeyOnly, It>},
           handle{std::move(iter)} {}
 
@@ -1706,6 +1700,32 @@ public:
     meta_iterator operator++(int) ENTT_NOEXCEPT {
         meta_iterator orig = *this;
         return ++(*this), orig;
+    }
+
+    /**
+     * @brief Indirection operator for accessing the pointed opaque object.
+     * @return The element to which the iterator points.
+     */
+    [[nodiscard]] reference operator*() const {
+        reference other;
+        vtable(operation::deref, handle, &other);
+        return other;
+    }
+
+    /**
+     * @brief Access operator for accessing the pointed opaque object.
+     * @return The element to which the iterator points.
+     */
+    [[nodiscard]] pointer operator->() const {
+        return operator*();
+    }
+
+    /**
+     * @brief Returns false if an iterator is invalid, true otherwise.
+     * @return False if the iterator is invalid, true otherwise.
+     */
+    [[nodiscard]] explicit operator bool() const ENTT_NOEXCEPT {
+        return static_cast<bool>(handle);
     }
 
     /**
@@ -1724,24 +1744,6 @@ public:
      */
     [[nodiscard]] bool operator!=(const meta_iterator &other) const ENTT_NOEXCEPT {
         return !(*this == other);
-    }
-
-    /**
-     * @brief Indirection operator.
-     * @return The element to which the iterator points.
-     */
-    [[nodiscard]] reference operator*() const {
-        reference other;
-        vtable(operation::deref, handle, &other);
-        return other;
-    }
-
-    /**
-     * @brief Returns false if an iterator is invalid, true otherwise.
-     * @return False if the iterator is invalid, true otherwise.
-     */
-    [[nodiscard]] explicit operator bool() const ENTT_NOEXCEPT {
-        return static_cast<bool>(handle);
     }
 
 private:

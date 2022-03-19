@@ -1,7 +1,10 @@
+#include <cstddef>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 #include <gtest/gtest.h>
+#include <entt/config/config.h>
 #include <entt/core/compressed_pair.hpp>
 
 struct empty_type {};
@@ -48,7 +51,8 @@ TEST(CompressedPair, Size) {
     static_assert(sizeof(entt::compressed_pair<int, int>) == sizeof(int[2u]));
     static_assert(sizeof(entt::compressed_pair<empty_type, int>) == sizeof(int));
     static_assert(sizeof(entt::compressed_pair<int, empty_type>) == sizeof(int));
-    static_assert(sizeof(entt::compressed_pair<int, empty_type>) != sizeof(local));
+    static_assert(sizeof(entt::compressed_pair<int, empty_type>) < sizeof(local));
+    static_assert(sizeof(entt::compressed_pair<int, empty_type>) < sizeof(std::pair<int, empty_type>));
 }
 
 TEST(CompressedPair, ConstructCopyMove) {
@@ -87,9 +91,13 @@ TEST(CompressedPair, ConstructCopyMove) {
 }
 
 TEST(CompressedPair, PiecewiseConstruct) {
-    entt::compressed_pair<empty_type, int> pair{std::piecewise_construct, std::make_tuple(), std::make_tuple(3)};
+    std::vector<int> vec{42};
+    entt::compressed_pair<empty_type, empty_type> empty{std::piecewise_construct, std::make_tuple(), std::make_tuple()};
+    entt::compressed_pair<std::vector<int>, std::size_t> pair{std::piecewise_construct, std::forward_as_tuple(std::move(vec)), std::make_tuple(sizeof(empty))};
 
-    ASSERT_EQ(pair.second(), 3);
+    ASSERT_EQ(pair.first().size(), 1u);
+    ASSERT_EQ(pair.second(), sizeof(empty));
+    ASSERT_EQ(vec.size(), 0u);
 }
 
 TEST(CompressedPair, DeductionGuide) {

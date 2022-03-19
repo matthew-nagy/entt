@@ -4,11 +4,12 @@
 #include <algorithm>
 #include <cstddef>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
 #include <vector>
+#include "../container/dense_map.hpp"
 #include "../core/type_info.hpp"
 #include "../core/type_traits.hpp"
+#include "../core/utility.hpp"
 #include "fwd.hpp"
 #include "helper.hpp"
 
@@ -130,7 +131,7 @@ class basic_organizer final {
         } else if constexpr(internal::is_view_v<Type>) {
             return as_view{reg};
         } else {
-            return reg.template ctx_or_set<std::remove_reference_t<Type>>();
+            return reg.ctx().template emplace<std::remove_reference_t<Type>>();
         }
     }
 
@@ -162,7 +163,7 @@ class basic_organizer final {
         const auto length = vertices.size();
         std::vector<bool> edges(length * length, false);
 
-        // creates the ajacency matrix
+        // creates the adjacency matrix
         for(const auto &deps: dependencies) {
             const auto last = deps.second.cend();
             auto it = deps.second.cbegin();
@@ -477,7 +478,7 @@ public:
     }
 
 private:
-    std::unordered_map<id_type, std::vector<std::pair<std::size_t, bool>>> dependencies;
+    dense_map<id_type, std::vector<std::pair<std::size_t, bool>>, identity> dependencies;
     std::vector<vertex_data> vertices;
 };
 

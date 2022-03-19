@@ -6,11 +6,12 @@
 #include <iterator>
 #include <tuple>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 #include "../config/config.h"
+#include "../container/dense_map.hpp"
 #include "../core/type_traits.hpp"
+#include "component.hpp"
 #include "entity.hpp"
 #include "fwd.hpp"
 #include "registry.hpp"
@@ -70,10 +71,10 @@ public:
         : reg{&source} {}
 
     /*! @brief Default move constructor. */
-    basic_snapshot(basic_snapshot &&) = default;
+    basic_snapshot(basic_snapshot &&) ENTT_NOEXCEPT = default;
 
     /*! @brief Default move assignment operator. @return This snapshot. */
-    basic_snapshot &operator=(basic_snapshot &&) = default;
+    basic_snapshot &operator=(basic_snapshot &&) ENTT_NOEXCEPT = default;
 
     /**
      * @brief Puts aside all the entities from the underlying registry.
@@ -114,7 +115,7 @@ public:
     const basic_snapshot &component(Archive &archive) const {
         if constexpr(sizeof...(Component) == 1u) {
             const auto view = reg->template view<const Component...>();
-            (component<Component>(archive, view.data(), view.data() + view.size()), ...);
+            (component<Component>(archive, view.rbegin(), view.rend()), ...);
             return *this;
         } else {
             (component<Component>(archive), ...);
@@ -201,10 +202,10 @@ public:
     }
 
     /*! @brief Default move constructor. */
-    basic_snapshot_loader(basic_snapshot_loader &&) = default;
+    basic_snapshot_loader(basic_snapshot_loader &&) ENTT_NOEXCEPT = default;
 
     /*! @brief Default move assignment operator. @return This loader. */
-    basic_snapshot_loader &operator=(basic_snapshot_loader &&) = default;
+    basic_snapshot_loader &operator=(basic_snapshot_loader &&) ENTT_NOEXCEPT = default;
 
     /**
      * @brief Restores entities that were in use during serialization.
@@ -262,8 +263,10 @@ public:
      * @return A valid loader to continue restoring data.
      */
     const basic_snapshot_loader &orphans() const {
-        reg->orphans([this](const auto entt) {
-            reg->release(entt);
+        reg->each([this](const auto entt) {
+            if(reg->orphan(entt)) {
+                reg->release(entt);
+            }
         });
 
         return *this;
@@ -337,7 +340,8 @@ class basic_continuous_loader {
             }
         }
 
-        std::swap(container, other);
+        using std::swap;
+        swap(container, other);
     }
 
     template<typename Container>
@@ -515,8 +519,10 @@ public:
      * @return A non-const reference to this loader.
      */
     basic_continuous_loader &orphans() {
-        reg->orphans([this](const auto entt) {
-            reg->release(entt);
+        reg->each([this](const auto entt) {
+            if(reg->orphan(entt)) {
+                reg->release(entt);
+            }
         });
 
         return *this;
@@ -548,7 +554,7 @@ public:
     }
 
 private:
-    std::unordered_map<entity_type, std::pair<entity_type, bool>> remloc;
+    dense_map<entity_type, std::pair<entity_type, bool>> remloc;
     basic_registry<entity_type> *reg;
 };
 

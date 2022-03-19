@@ -1,3 +1,4 @@
+#include <memory>
 #include <utility>
 #include <vector>
 #include <gtest/gtest.h>
@@ -16,8 +17,6 @@ struct sigh_listener {
     bool h(const int &) {
         return k;
     }
-
-    void i() {}
 
     // useless definition just because msvc does weird things if both are empty
     void l() {
@@ -122,7 +121,7 @@ TEST_F(SigH, Swap) {
     ASSERT_FALSE(sigh1.empty());
     ASSERT_TRUE(sigh2.empty());
 
-    std::swap(sigh1, sigh2);
+    sigh1.swap(sigh2);
 
     ASSERT_TRUE(sink1.empty());
     ASSERT_FALSE(sink2.empty());
@@ -529,4 +528,57 @@ TEST_F(SigH, UnboundMemberFunction) {
     sigh.publish(&listener, 42);
 
     ASSERT_TRUE(listener.k);
+}
+
+TEST_F(SigH, CustomAllocator) {
+    std::allocator<void (*)(int)> allocator;
+
+    auto test = [&](auto curr) {
+        ASSERT_EQ(curr.get_allocator(), allocator);
+        ASSERT_FALSE(curr.get_allocator() != allocator);
+        ASSERT_TRUE(curr.empty());
+
+        entt::sink sink{curr};
+        sigh_listener listener;
+        sink.template connect<&sigh_listener::g>(listener);
+
+        decltype(curr) copy{curr, allocator};
+        sink.disconnect(listener);
+
+        ASSERT_TRUE(curr.empty());
+        ASSERT_FALSE(copy.empty());
+
+        curr = copy;
+
+        ASSERT_FALSE(curr.empty());
+        ASSERT_FALSE(copy.empty());
+
+        decltype(curr) move{std::move(copy), allocator};
+
+        ASSERT_TRUE(copy.empty());
+        ASSERT_FALSE(move.empty());
+
+        sink = entt::sink{move};
+        sink.disconnect(&listener);
+
+        ASSERT_TRUE(copy.empty());
+        ASSERT_TRUE(move.empty());
+
+        sink.template connect<&sigh_listener::g>(listener);
+        copy.swap(move);
+
+        ASSERT_FALSE(copy.empty());
+        ASSERT_TRUE(move.empty());
+
+        sink = entt::sink{copy};
+        sink.disconnect();
+
+        ASSERT_TRUE(copy.empty());
+        ASSERT_TRUE(move.empty());
+    };
+
+    entt::sigh<void(int), decltype(allocator)> sigh{allocator};
+
+    test(sigh);
+    test(std::move(sigh));
 }

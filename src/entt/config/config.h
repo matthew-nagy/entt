@@ -28,7 +28,6 @@
 #endif
 
 #ifndef ENTT_ID_TYPE
-#    include <cstdint>
 #    define ENTT_ID_TYPE std::uint32_t
 #endif
 
@@ -49,11 +48,9 @@
 #endif
 
 #ifdef ENTT_NO_ETO
-#    include <type_traits>
-#    define ENTT_IGNORE_IF_EMPTY std::false_type
+#    define ENTT_IGNORE_IF_EMPTY false
 #else
-#    include <type_traits>
-#    define ENTT_IGNORE_IF_EMPTY std::true_type
+#    define ENTT_IGNORE_IF_EMPTY true
 #endif
 
 #ifndef ENTT_STANDARD_CPP

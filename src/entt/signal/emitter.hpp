@@ -8,10 +8,12 @@
 #include <memory>
 #include <type_traits>
 #include <utility>
-#include <vector>
 #include "../config/config.h"
+#include "../container/dense_map.hpp"
 #include "../core/fwd.hpp"
 #include "../core/type_info.hpp"
+#include "../core/utility.hpp"
+#include "fwd.hpp"
 
 namespace entt {
 
@@ -120,23 +122,19 @@ class emitter {
 
     template<typename Event>
     [[nodiscard]] pool_handler<Event> *assure() {
-        const auto index = type_index<Event>::value();
-
-        if(!(index < pools.size())) {
-            pools.resize(std::size_t(index) + 1u);
+        if(auto &&ptr = pools[type_hash<Event>::value()]; !ptr) {
+            auto *cpool = new pool_handler<Event>{};
+            ptr.reset(cpool);
+            return cpool;
+        } else {
+            return static_cast<pool_handler<Event> *>(ptr.get());
         }
-
-        if(!pools[index]) {
-            pools[index].reset(new pool_handler<Event>{});
-        }
-
-        return static_cast<pool_handler<Event> *>(pools[index].get());
     }
 
     template<typename Event>
     [[nodiscard]] const pool_handler<Event> *assure() const {
-        const auto index = type_index<Event>::value();
-        return (!(index < pools.size()) || !pools[index]) ? nullptr : static_cast<const pool_handler<Event> *>(pools[index].get());
+        const auto it = pools.find(type_hash<Event>::value());
+        return (it == pools.cend()) ? nullptr : static_cast<const pool_handler<Event> *>(it->second.get());
     }
 
 public:
@@ -159,7 +157,7 @@ public:
         friend class emitter;
 
         /*! @brief Default constructor. */
-        connection() = default;
+        connection() ENTT_NOEXCEPT = default;
 
         /**
          * @brief Creates a connection that wraps its underlying instance.
@@ -173,7 +171,7 @@ public:
     emitter() = default;
 
     /*! @brief Default destructor. */
-    virtual ~emitter() {
+    virtual ~emitter() ENTT_NOEXCEPT {
         static_assert(std::is_base_of_v<emitter<Derived>, Derived>, "Incorrect use of the class template");
     }
 
@@ -285,9 +283,7 @@ public:
      */
     void clear() ENTT_NOEXCEPT {
         for(auto &&cpool: pools) {
-            if(cpool) {
-                cpool->clear();
-            }
+            cpool.second->clear();
         }
     }
 
@@ -308,12 +304,12 @@ public:
      */
     [[nodiscard]] bool empty() const ENTT_NOEXCEPT {
         return std::all_of(pools.cbegin(), pools.cend(), [](auto &&cpool) {
-            return !cpool || cpool->empty();
+            return cpool.second->empty();
         });
     }
 
 private:
-    std::vector<std::unique_ptr<basic_pool>> pools{};
+    dense_map<id_type, std::unique_ptr<basic_pool>, identity> pools{};
 };
 
 } // namespace entt
