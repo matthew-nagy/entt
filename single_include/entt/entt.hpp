@@ -13384,7 +13384,7 @@ public:
         const auto elem = sparse_ptr(entt);
         constexpr auto cap = entity_traits::to_entity(null);
         // testing versions permits to avoid accessing the packed array
-        return elem && (((~cap & entity_traits::to_integral(entt)) ^ entity_traits::to_integral(*elem)) < cap);
+         return elem && (((~cap & entity_traits::to_integral(entt)) ^ entity_traits::to_integral(*elem)) < cap);
     }
 
     /**
