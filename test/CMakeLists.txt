@@ -51,7 +51,20 @@ function(SETUP_TARGET TARGET_NAME)
         target_compile_options(
             ${TARGET_NAME}
             PRIVATE
-                /EHsc /W1 /wd4996 /w14800
+                # vs2017 emits too many false positives for my tastes
+                $<IF:$<EQUAL:${MSVC_TOOLSET_VERSION},141>, /W1, /W4>
+                # clang-cl goes a little wrong with some warnings instead
+                $<$<STREQUAL:"${CMAKE_CXX_COMPILER_ID}","Clang">:
+                    -Wno-deprecated-declarations
+                    -Wno-ignored-qualifiers
+                    -Wno-unknown-warning-option
+                    -Wno-exceptions
+                    -Wno-unused-local-typedef
+                    -Wno-unused-private-field
+                >
+                # documentation diagnostic turned on for clang-cl only
+                $<$<STREQUAL:"${CMAKE_CXX_COMPILER_ID}","Clang">:-Wdocumentation>
+                /EHsc /wd4324 /wd4996
                 $<$<CONFIG:Debug>:/Od>
                 $<$<CONFIG:Release>:/O2>
         )
@@ -84,6 +97,7 @@ function(SETUP_TARGET TARGET_NAME)
 endfunction()
 
 add_library(odr OBJECT odr.cpp)
+set_target_properties(odr PROPERTIES POSITION_INDEPENDENT_CODE ON)
 SETUP_TARGET(odr)
 
 function(SETUP_BASIC_TEST TEST_NAME TEST_SOURCES)
@@ -107,6 +121,7 @@ function(SETUP_PLUGIN_TEST TEST_NAME)
     target_include_directories(_${TEST_NAME} PRIVATE ${cr_INCLUDE_DIR})
     target_include_directories(lib_${TEST_NAME} PRIVATE ${cr_INCLUDE_DIR})
     target_link_libraries(lib_${TEST_NAME} PRIVATE ${CMAKE_DL_LIBS})
+    add_dependencies(lib_${TEST_NAME} _${TEST_NAME})
 endfunction()
 
 # Test benchmark
@@ -142,11 +157,13 @@ if(ENTT_BUILD_LIB)
 
     SETUP_LIB_TEST(dispatcher)
     SETUP_LIB_TEST(emitter)
+    SETUP_LIB_TEST(locator)
     SETUP_LIB_TEST(meta)
     SETUP_LIB_TEST(registry)
 
     SETUP_PLUGIN_TEST(dispatcher_plugin)
     SETUP_PLUGIN_TEST(emitter_plugin)
+    SETUP_PLUGIN_TEST(locator_plugin)
     SETUP_PLUGIN_TEST(meta_plugin)
     SETUP_PLUGIN_TEST(registry_plugin)
 
@@ -173,6 +190,10 @@ if(ENTT_BUILD_SNAPSHOT)
     SETUP_BASIC_TEST(cereal snapshot/snapshot.cpp)
     target_include_directories(cereal PRIVATE ${cereal_INCLUDE_DIR})
 endif()
+
+# Test config
+
+SETUP_BASIC_TEST(version entt/config/version.cpp)
 
 # Test container
 
@@ -206,13 +227,18 @@ SETUP_BASIC_TEST(helper entt/entity/helper.cpp)
 SETUP_BASIC_TEST(observer entt/entity/observer.cpp)
 SETUP_BASIC_TEST(organizer entt/entity/organizer.cpp)
 SETUP_BASIC_TEST(registry entt/entity/registry.cpp)
-SETUP_BASIC_TEST(registry_no_eto entt/entity/registry_no_eto.cpp ENTT_NO_ETO)
 SETUP_BASIC_TEST(runtime_view entt/entity/runtime_view.cpp)
-SETUP_BASIC_TEST(sigh_storage_mixin entt/entity/sigh_storage_mixin.cpp)
 SETUP_BASIC_TEST(snapshot entt/entity/snapshot.cpp)
 SETUP_BASIC_TEST(sparse_set entt/entity/sparse_set.cpp)
 SETUP_BASIC_TEST(storage entt/entity/storage.cpp)
+SETUP_BASIC_TEST(storage_mixin entt/entity/storage_mixin.cpp)
 SETUP_BASIC_TEST(view entt/entity/view.cpp)
+
+# Test graph
+
+SETUP_BASIC_TEST(adjacency_matrix entt/graph/adjacency_matrix.cpp)
+SETUP_BASIC_TEST(dot entt/graph/dot.cpp)
+SETUP_BASIC_TEST(flow entt/graph/flow.cpp)
 
 # Test locator
 
@@ -223,6 +249,7 @@ SETUP_BASIC_TEST(locator entt/locator/locator.cpp)
 SETUP_BASIC_TEST(meta_any entt/meta/meta_any.cpp)
 SETUP_BASIC_TEST(meta_base entt/meta/meta_base.cpp)
 SETUP_BASIC_TEST(meta_container entt/meta/meta_container.cpp)
+SETUP_BASIC_TEST(meta_context entt/meta/meta_context.cpp)
 SETUP_BASIC_TEST(meta_conv entt/meta/meta_conv.cpp)
 SETUP_BASIC_TEST(meta_ctor entt/meta/meta_ctor.cpp)
 SETUP_BASIC_TEST(meta_data entt/meta/meta_data.cpp)
@@ -248,6 +275,8 @@ SETUP_BASIC_TEST(scheduler entt/process/scheduler.cpp)
 # Test resource
 
 SETUP_BASIC_TEST(resource entt/resource/resource.cpp)
+SETUP_BASIC_TEST(resource_cache entt/resource/resource_cache.cpp)
+SETUP_BASIC_TEST(resource_loader entt/resource/resource_loader.cpp)
 
 # Test signal
 

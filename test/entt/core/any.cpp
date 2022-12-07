@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 #include <entt/core/any.hpp>
 #include <entt/core/type_info.hpp>
+#include "../common/config.h"
 
 struct empty {
     ~empty() {
@@ -59,7 +60,7 @@ struct not_movable {
     not_movable &operator=(const not_movable &) = default;
     not_movable &operator=(not_movable &&) = delete;
 
-    double payload;
+    double payload{};
 };
 
 struct alignas(64u) over_aligned {};
@@ -1192,20 +1193,20 @@ TEST_F(Any, AnyCast) {
     ASSERT_EQ(entt::any_cast<int>(entt::any{42}), 42);
 }
 
-TEST_F(AnyDeathTest, AnyCast) {
+ENTT_DEBUG_TEST_F(AnyDeathTest, AnyCast) {
     entt::any any{42};
     const auto &cany = any;
 
-    ASSERT_DEATH(entt::any_cast<double &>(any), "");
-    ASSERT_DEATH(entt::any_cast<const double &>(cany), "");
+    ASSERT_DEATH([[maybe_unused]] auto &elem = entt::any_cast<double &>(any), "");
+    ASSERT_DEATH([[maybe_unused]] const auto &elem = entt::any_cast<const double &>(cany), "");
 
     not_copyable instance{};
     instance.payload = 42.;
     entt::any ref{entt::forward_as_any(instance)};
     entt::any cref{entt::forward_as_any(std::as_const(instance).payload)};
 
-    ASSERT_DEATH(entt::any_cast<not_copyable>(std::as_const(ref).as_ref()), "");
-    ASSERT_DEATH(entt::any_cast<double>(entt::any{42}), "");
+    ASSERT_DEATH([[maybe_unused]] auto elem = entt::any_cast<not_copyable>(std::as_const(ref).as_ref()), "");
+    ASSERT_DEATH([[maybe_unused]] auto elem = entt::any_cast<double>(entt::any{42}), "");
 }
 
 TEST_F(Any, MakeAny) {
@@ -1237,9 +1238,9 @@ TEST_F(Any, MakeAny) {
 
 TEST_F(Any, ForwardAsAny) {
     int value = 42;
-    auto any = entt::forward_as_any(std::move(value));
     auto ref = entt::forward_as_any(value);
     auto cref = entt::forward_as_any(std::as_const(value));
+    auto any = entt::forward_as_any(std::move(value));
 
     ASSERT_TRUE(any);
     ASSERT_TRUE(ref);
@@ -1410,7 +1411,7 @@ TEST_F(Any, SBOVsZeroedSBOSize) {
 }
 
 TEST_F(Any, SboAlignment) {
-    static constexpr auto alignment = alignof(over_aligned);
+    constexpr auto alignment = alignof(over_aligned);
     entt::basic_any<alignment, alignment> sbo[2] = {over_aligned{}, over_aligned{}};
     const auto *data = sbo[0].data();
 
@@ -1426,7 +1427,7 @@ TEST_F(Any, SboAlignment) {
 }
 
 TEST_F(Any, NoSboAlignment) {
-    static constexpr auto alignment = alignof(over_aligned);
+    constexpr auto alignment = alignof(over_aligned);
     entt::basic_any<alignment> nosbo[2] = {over_aligned{}, over_aligned{}};
     const auto *data = nosbo[0].data();
 

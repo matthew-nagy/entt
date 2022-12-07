@@ -8,12 +8,20 @@
 #include <utility>
 #include <gtest/gtest.h>
 #include <entt/core/hashed_string.hpp>
-#include <entt/core/type_traits.hpp>
-#include <entt/entity/component.hpp>
+#include <entt/core/type_info.hpp>
 #include <entt/entity/entity.hpp>
 #include <entt/entity/registry.hpp>
+#include "../common/config.h"
 
 struct empty_type {};
+
+struct no_eto_type {
+    static constexpr std::size_t page_size = 1024u;
+};
+
+bool operator==(const no_eto_type &lhs, const no_eto_type &rhs) {
+    return &lhs == &rhs;
+}
 
 struct stable_type {
     static constexpr auto in_place_delete = true;
@@ -61,6 +69,24 @@ struct owner {
     const entt::registry *parent{nullptr};
 };
 
+struct destruction_order {
+    using ctx_check_type = int;
+
+    destruction_order(const entt::registry &ref, bool &ctx)
+        : registry{&ref},
+          ctx_check{&ctx} {
+        *ctx_check = (registry->ctx().find<int>() != nullptr);
+    }
+
+    ~destruction_order() {
+        *ctx_check = *ctx_check && (registry->ctx().find<int>() != nullptr);
+    }
+
+private:
+    const entt::registry *registry;
+    bool *ctx_check{};
+};
+
 TEST(Registry, Context) {
     entt::registry registry;
     auto &ctx = registry.ctx();
@@ -95,16 +121,26 @@ TEST(Registry, Context) {
 
     ASSERT_EQ(ctx.emplace<char>('a'), 'c');
     ASSERT_EQ(ctx.find<const char>(), cctx.find<char>());
-    ASSERT_EQ(ctx.at<char>(), cctx.at<const char>());
-    ASSERT_EQ(ctx.at<char>(), 'c');
+    ASSERT_EQ(ctx.get<char>(), cctx.get<const char>());
+    ASSERT_EQ(ctx.get<char>(), 'c');
 
     ASSERT_EQ(ctx.emplace<const int>(0), 42);
     ASSERT_EQ(ctx.find<const int>(), cctx.find<int>());
-    ASSERT_EQ(ctx.at<int>(), cctx.at<const int>());
-    ASSERT_EQ(ctx.at<int>(), 42);
+    ASSERT_EQ(ctx.get<int>(), cctx.get<const int>());
+    ASSERT_EQ(ctx.get<int>(), 42);
 
     ASSERT_EQ(ctx.find<double>(), nullptr);
     ASSERT_EQ(cctx.find<double>(), nullptr);
+
+    ASSERT_EQ(ctx.insert_or_assign<char>('a'), 'a');
+    ASSERT_EQ(ctx.find<const char>(), cctx.find<char>());
+    ASSERT_EQ(ctx.get<char>(), cctx.get<const char>());
+    ASSERT_EQ(ctx.get<const char>(), 'a');
+
+    ASSERT_EQ(ctx.insert_or_assign<const int>(0), 0);
+    ASSERT_EQ(ctx.find<const int>(), cctx.find<int>());
+    ASSERT_EQ(ctx.get<int>(), cctx.get<const int>());
+    ASSERT_EQ(ctx.get<int>(), 0);
 }
 
 TEST(Registry, ContextHint) {
@@ -115,7 +151,7 @@ TEST(Registry, ContextHint) {
     const auto &cctx = std::as_const(registry).ctx();
 
     ctx.emplace<int>(42);
-    ctx.emplace_hint<int>("other"_hs, 3);
+    ctx.emplace_as<int>("other"_hs, 3);
 
     ASSERT_TRUE(ctx.contains<int>());
     ASSERT_TRUE(cctx.contains<const int>("other"_hs));
@@ -125,14 +161,20 @@ TEST(Registry, ContextHint) {
     ASSERT_NE(ctx.find<int>("other"_hs), nullptr);
     ASSERT_EQ(cctx.find<const char>("other"_hs), nullptr);
 
-    ASSERT_EQ(ctx.at<int>(), 42);
-    ASSERT_EQ(cctx.at<const int>("other"_hs), 3);
+    ASSERT_EQ(ctx.get<int>(), 42);
+    ASSERT_EQ(cctx.get<const int>("other"_hs), 3);
+
+    ctx.insert_or_assign(3);
+    ctx.insert_or_assign("other"_hs, 42);
+
+    ASSERT_EQ(ctx.get<const int>(), 3);
+    ASSERT_EQ(cctx.get<int>("other"_hs), 42);
 
     ASSERT_FALSE(ctx.erase<char>("other"_hs));
     ASSERT_TRUE(ctx.erase<int>());
 
     ASSERT_TRUE(cctx.contains<int>("other"_hs));
-    ASSERT_EQ(ctx.at<int>("other"_hs), 3);
+    ASSERT_EQ(ctx.get<int>("other"_hs), 42);
 
     ASSERT_TRUE(ctx.erase<int>("other"_hs));
 
@@ -149,17 +191,17 @@ TEST(Registry, ContextAsRef) {
     ASSERT_NE(registry.ctx().find<int>(), nullptr);
     ASSERT_NE(registry.ctx().find<const int>(), nullptr);
     ASSERT_NE(std::as_const(registry).ctx().find<const int>(), nullptr);
-    ASSERT_EQ(registry.ctx().at<const int>(), 3);
-    ASSERT_EQ(registry.ctx().at<int>(), 3);
+    ASSERT_EQ(registry.ctx().get<const int>(), 3);
+    ASSERT_EQ(registry.ctx().get<int>(), 3);
 
-    registry.ctx().at<int>() = 42;
+    registry.ctx().get<int>() = 42;
 
-    ASSERT_EQ(registry.ctx().at<int>(), 42);
+    ASSERT_EQ(registry.ctx().get<int>(), 42);
     ASSERT_EQ(value, 42);
 
     value = 3;
 
-    ASSERT_EQ(std::as_const(registry).ctx().at<const int>(), 3);
+    ASSERT_EQ(std::as_const(registry).ctx().get<const int>(), 3);
 }
 
 TEST(Registry, ContextAsConstRef) {
@@ -171,17 +213,19 @@ TEST(Registry, ContextAsConstRef) {
     ASSERT_EQ(registry.ctx().find<int>(), nullptr);
     ASSERT_NE(registry.ctx().find<const int>(), nullptr);
     ASSERT_NE(std::as_const(registry).ctx().find<const int>(), nullptr);
-    ASSERT_EQ(registry.ctx().at<const int>(), 3);
+    ASSERT_EQ(registry.ctx().get<const int>(), 3);
 
     value = 42;
 
-    ASSERT_EQ(std::as_const(registry).ctx().at<const int>(), 42);
+    ASSERT_EQ(std::as_const(registry).ctx().get<const int>(), 42);
 }
 
 TEST(Registry, Functionalities) {
     using traits_type = entt::entt_traits<entt::entity>;
 
     entt::registry registry;
+
+    ASSERT_NO_FATAL_FAILURE([[maybe_unused]] auto alloc = registry.get_allocator());
 
     ASSERT_EQ(registry.size(), 0u);
     ASSERT_EQ(registry.alive(), 0u);
@@ -329,6 +373,18 @@ TEST(Registry, Functionalities) {
     ASSERT_TRUE(registry.storage<int>().empty());
 }
 
+TEST(Registry, Constructors) {
+    entt::registry registry;
+    entt::registry other{42};
+    const entt::entity entity = entt::tombstone;
+
+    ASSERT_TRUE(registry.empty());
+    ASSERT_TRUE(other.empty());
+
+    ASSERT_EQ(registry.released(), entity);
+    ASSERT_EQ(other.released(), entity);
+}
+
 TEST(Registry, Move) {
     entt::registry registry;
     const auto entity = registry.create();
@@ -352,6 +408,36 @@ TEST(Registry, Move) {
     ASSERT_EQ(test.parent, &other);
 
     registry = std::move(other);
+    registry.emplace<int>(entity);
+    registry.emplace<int>(registry.create(entity));
+
+    ASSERT_EQ(test.parent, &registry);
+}
+
+TEST(Registry, Swap) {
+    entt::registry registry;
+    const auto entity = registry.create();
+    owner test{};
+
+    registry.on_construct<int>().connect<&owner::receive>(test);
+    registry.on_destroy<int>().connect<&owner::receive>(test);
+
+    ASSERT_EQ(test.parent, nullptr);
+
+    registry.emplace<int>(entity);
+
+    ASSERT_EQ(test.parent, &registry);
+
+    entt::registry other;
+    other.swap(registry);
+    other.erase<int>(entity);
+
+    registry = {};
+    registry.emplace<int>(registry.create(entity));
+
+    ASSERT_EQ(test.parent, &other);
+
+    registry.swap(other);
     registry.emplace<int>(entity);
     registry.emplace<int>(registry.create(entity));
 
@@ -516,14 +602,20 @@ TEST(Registry, CreateClearCycle) {
     for(int i = 0; i < 7; ++i) {
         const auto entity = registry.create();
         registry.emplace<int>(entity);
-        if(i == 3) { pre = entity; }
+
+        if(i == 3) {
+            pre = entity;
+        }
     }
 
     registry.clear();
 
     for(int i = 0; i < 5; ++i) {
         const auto entity = registry.create();
-        if(i == 3) { post = entity; }
+
+        if(i == 3) {
+            post = entity;
+        }
     }
 
     ASSERT_FALSE(registry.valid(pre));
@@ -564,7 +656,7 @@ TEST(Registry, DestroyVersion) {
     ASSERT_EQ(registry.current(e1), 3u);
 }
 
-TEST(RegistryDeathTest, DestroyVersion) {
+ENTT_DEBUG_TEST(RegistryDeathTest, DestroyVersion) {
     entt::registry registry;
     const auto entity = registry.create();
 
@@ -690,7 +782,7 @@ TEST(Registry, ReleaseVersion) {
     ASSERT_EQ(registry.current(entities[1u]), 3u);
 }
 
-TEST(RegistryDeathTest, ReleaseVersion) {
+ENTT_DEBUG_TEST(RegistryDeathTest, ReleaseVersion) {
     entt::registry registry;
     entt::entity entity = registry.create();
 
@@ -778,7 +870,7 @@ TEST(Registry, Each) {
     match = 0u;
 
     registry.each([&](auto entity) {
-        if(registry.all_of<int>(entity)) { ++match; }
+        match += registry.all_of<int>(entity);
         static_cast<void>(registry.create());
         ++tot;
     });
@@ -805,7 +897,7 @@ TEST(Registry, Each) {
     match = 0u;
 
     registry.each([&](auto entity) {
-        if(registry.all_of<int>(entity)) { ++match; }
+        match += registry.all_of<int>(entity);
         registry.destroy(entity);
         ++tot;
     });
@@ -875,7 +967,7 @@ TEST(Registry, NonOwningGroupInitOnFirstUse) {
     auto group = registry.group<>(entt::get<int, char>);
     group.each([&cnt](auto...) { ++cnt; });
 
-    ASSERT_TRUE((registry.sortable<int, char>()));
+    ASSERT_FALSE((registry.owned<int, char>()));
     ASSERT_EQ(cnt, 2u);
 }
 
@@ -892,7 +984,7 @@ TEST(Registry, NonOwningGroupInitOnEmplace) {
     std::size_t cnt{};
     group.each([&cnt](auto...) { ++cnt; });
 
-    ASSERT_TRUE((registry.sortable<int, char>()));
+    ASSERT_FALSE((registry.owned<int, char>()));
     ASSERT_EQ(cnt, 2u);
 }
 
@@ -909,9 +1001,9 @@ TEST(Registry, FullOwningGroupInitOnFirstUse) {
     auto group = registry.group<int, char>();
     group.each([&cnt](auto...) { ++cnt; });
 
-    ASSERT_FALSE(registry.sortable<int>());
-    ASSERT_FALSE(registry.sortable<char>());
-    ASSERT_TRUE(registry.sortable<double>());
+    ASSERT_TRUE(registry.owned<int>());
+    ASSERT_TRUE(registry.owned<char>());
+    ASSERT_FALSE(registry.owned<double>());
     ASSERT_EQ(cnt, 2u);
 }
 
@@ -928,9 +1020,9 @@ TEST(Registry, FullOwningGroupInitOnEmplace) {
     std::size_t cnt{};
     group.each([&cnt](auto...) { ++cnt; });
 
-    ASSERT_FALSE(registry.sortable<int>());
-    ASSERT_FALSE(registry.sortable<char>());
-    ASSERT_TRUE(registry.sortable<double>());
+    ASSERT_TRUE(registry.owned<int>());
+    ASSERT_TRUE(registry.owned<char>());
+    ASSERT_FALSE(registry.owned<double>());
     ASSERT_EQ(cnt, 2u);
 }
 
@@ -947,9 +1039,9 @@ TEST(Registry, PartialOwningGroupInitOnFirstUse) {
     auto group = registry.group<int>(entt::get<char>);
     group.each([&cnt](auto...) { ++cnt; });
 
-    ASSERT_FALSE((registry.sortable<int, char>()));
-    ASSERT_FALSE(registry.sortable<int>());
-    ASSERT_TRUE(registry.sortable<char>());
+    ASSERT_TRUE((registry.owned<int, char>()));
+    ASSERT_TRUE(registry.owned<int>());
+    ASSERT_FALSE(registry.owned<char>());
     ASSERT_EQ(cnt, 2u);
 }
 
@@ -966,9 +1058,9 @@ TEST(Registry, PartialOwningGroupInitOnEmplace) {
     std::size_t cnt{};
     group.each([&cnt](auto...) { ++cnt; });
 
-    ASSERT_FALSE((registry.sortable<int, char>()));
-    ASSERT_FALSE(registry.sortable<int>());
-    ASSERT_TRUE(registry.sortable<char>());
+    ASSERT_TRUE((registry.owned<int, char>()));
+    ASSERT_TRUE(registry.owned<int>());
+    ASSERT_FALSE(registry.owned<char>());
     ASSERT_EQ(cnt, 2u);
 }
 
@@ -1387,6 +1479,25 @@ TEST(Registry, Signals) {
     ASSERT_EQ(listener.last, entities[0u]);
 }
 
+TEST(Registry, SignalWhenDestroying) {
+    entt::registry registry;
+    const auto entity = registry.create();
+
+    registry.on_destroy<double>().connect<&entt::registry::remove<char>>();
+    registry.emplace<double>(entity);
+    registry.emplace<int>(entity);
+
+    ASSERT_NE(registry.storage(entt::type_id<double>().hash()), nullptr);
+    ASSERT_NE(registry.storage(entt::type_id<int>().hash()), nullptr);
+    ASSERT_EQ(registry.storage(entt::type_id<char>().hash()), nullptr);
+    ASSERT_TRUE(registry.valid(entity));
+
+    registry.destroy(entity);
+
+    ASSERT_NE(registry.storage(entt::type_id<char>().hash()), nullptr);
+    ASSERT_FALSE(registry.valid(entity));
+}
+
 TEST(Registry, Insert) {
     entt::registry registry;
     entt::entity entities[3u];
@@ -1481,7 +1592,7 @@ TEST(Registry, Erase) {
     ASSERT_TRUE(registry.orphan(entities[2u]));
 }
 
-TEST(RegistryDeathTest, Erase) {
+ENTT_DEBUG_TEST(RegistryDeathTest, Erase) {
     entt::registry registry;
     const entt::entity entities[1u]{registry.create()};
 
@@ -1783,26 +1894,30 @@ TEST(Registry, Constness) {
     static_assert((std::is_same_v<decltype(registry.emplace<int>({})), int &>));
     static_assert((std::is_same_v<decltype(registry.emplace<empty_type>({})), void>));
 
+    static_assert((std::is_same_v<decltype(registry.get<>({})), std::tuple<>>));
     static_assert((std::is_same_v<decltype(registry.get<int>({})), int &>));
     static_assert((std::is_same_v<decltype(registry.get<int, const char>({})), std::tuple<int &, const char &>>));
 
+    static_assert((std::is_same_v<decltype(registry.try_get<>({})), std::tuple<>>));
     static_assert((std::is_same_v<decltype(registry.try_get<int>({})), int *>));
     static_assert((std::is_same_v<decltype(registry.try_get<int, const char>({})), std::tuple<int *, const char *>>));
 
-    static_assert((std::is_same_v<decltype(registry.ctx().at<int>()), int &>));
-    static_assert((std::is_same_v<decltype(registry.ctx().at<const char>()), const char &>));
+    static_assert((std::is_same_v<decltype(registry.ctx().get<int>()), int &>));
+    static_assert((std::is_same_v<decltype(registry.ctx().get<const char>()), const char &>));
 
     static_assert((std::is_same_v<decltype(registry.ctx().find<int>()), int *>));
     static_assert((std::is_same_v<decltype(registry.ctx().find<const char>()), const char *>));
 
+    static_assert((std::is_same_v<decltype(std::as_const(registry).get<>({})), std::tuple<>>));
     static_assert((std::is_same_v<decltype(std::as_const(registry).get<int>({})), const int &>));
     static_assert((std::is_same_v<decltype(std::as_const(registry).get<int, const char>({})), std::tuple<const int &, const char &>>));
 
+    static_assert((std::is_same_v<decltype(std::as_const(registry).try_get<>({})), std::tuple<>>));
     static_assert((std::is_same_v<decltype(std::as_const(registry).try_get<int>({})), const int *>));
     static_assert((std::is_same_v<decltype(std::as_const(registry).try_get<int, const char>({})), std::tuple<const int *, const char *>>));
 
-    static_assert((std::is_same_v<decltype(std::as_const(registry).ctx().at<int>()), const int &>));
-    static_assert((std::is_same_v<decltype(std::as_const(registry).ctx().at<const char>()), const char &>));
+    static_assert((std::is_same_v<decltype(std::as_const(registry).ctx().get<int>()), const int &>));
+    static_assert((std::is_same_v<decltype(std::as_const(registry).ctx().get<const char>()), const char &>));
 
     static_assert((std::is_same_v<decltype(std::as_const(registry).ctx().find<int>()), const int *>));
     static_assert((std::is_same_v<decltype(std::as_const(registry).ctx().find<const char>()), const char *>));
@@ -1894,7 +2009,7 @@ TEST(Registry, ScramblingPoolsIsAllowed) {
 
     // thanks to @andranik3949 for pointing out this missing test
     registry.view<const int>().each([](const auto entity, const auto &value) {
-        ASSERT_EQ(entt::to_integral(entity), value);
+        ASSERT_EQ(static_cast<int>(entt::to_integral(entity)), value);
     });
 }
 
@@ -1905,16 +2020,14 @@ TEST(Registry, RuntimePools) {
     auto &storage = registry.storage<empty_type>("other"_hs);
     const auto entity = registry.create();
 
-    static_assert(std::is_same_v<decltype(registry.storage<empty_type>()), typename entt::storage_traits<entt::entity, empty_type>::storage_type &>);
-    static_assert(std::is_same_v<decltype(registry.storage<const empty_type>()), const typename entt::storage_traits<entt::entity, empty_type>::storage_type &>);
-    static_assert(std::is_same_v<decltype(std::as_const(registry).storage<empty_type>()), const typename entt::storage_traits<entt::entity, empty_type>::storage_type &>);
-    static_assert(std::is_same_v<decltype(std::as_const(registry).storage<const empty_type>()), const typename entt::storage_traits<entt::entity, empty_type>::storage_type &>);
+    static_assert(std::is_same_v<decltype(registry.storage<empty_type>()), entt::storage_type_t<empty_type> &>);
+    static_assert(std::is_same_v<decltype(std::as_const(registry).storage<empty_type>()), const entt::storage_type_t<empty_type> &>);
 
-    static_assert(std::is_same_v<decltype(registry.storage("other"_hs)->second), typename entt::storage_traits<entt::entity, empty_type>::storage_type::base_type &>);
-    static_assert(std::is_same_v<decltype(std::as_const(registry).storage("other"_hs)->second), const typename entt::storage_traits<entt::entity, empty_type>::storage_type::base_type &>);
+    static_assert(std::is_same_v<decltype(registry.storage("other"_hs)), entt::storage_type_t<empty_type>::base_type *>);
+    static_assert(std::is_same_v<decltype(std::as_const(registry).storage("other"_hs)), const entt::storage_type_t<empty_type>::base_type *>);
 
-    ASSERT_NE(registry.storage("other"_hs), registry.storage().end());
-    ASSERT_EQ(std::as_const(registry).storage("rehto"_hs), registry.storage().end());
+    ASSERT_NE(registry.storage("other"_hs), nullptr);
+    ASSERT_EQ(std::as_const(registry).storage("rehto"_hs), nullptr);
 
     ASSERT_EQ(&registry.storage<empty_type>("other"_hs), &storage);
     ASSERT_NE(&std::as_const(registry).storage<empty_type>(), &storage);
@@ -1942,7 +2055,7 @@ TEST(Registry, RuntimePools) {
     ASSERT_FALSE(registry.any_of<empty_type>(entity));
 }
 
-TEST(RegistryDeathTest, RuntimePools) {
+ENTT_DEBUG_TEST(RegistryDeathTest, RuntimePools) {
     using namespace entt::literals;
 
     entt::registry registry;
@@ -1952,7 +2065,7 @@ TEST(RegistryDeathTest, RuntimePools) {
     ASSERT_DEATH(std::as_const(registry).storage<int>("other"_hs), "");
 }
 
-TEST(Registry, StorageProxy) {
+TEST(Registry, Storage) {
     using namespace entt::literals;
 
     entt::registry registry;
@@ -1962,7 +2075,7 @@ TEST(Registry, StorageProxy) {
 
     for(auto [id, pool]: registry.storage()) {
         static_assert(std::is_same_v<decltype(pool), entt::sparse_set &>);
-        static_assert(std::is_same_v<decltype(id), const entt::id_type>);
+        static_assert(std::is_same_v<decltype(id), entt::id_type>);
 
         ASSERT_TRUE(pool.contains(entity));
         ASSERT_EQ(std::addressof(storage), std::addressof(pool));
@@ -1971,7 +2084,7 @@ TEST(Registry, StorageProxy) {
 
     for(auto &&curr: std::as_const(registry).storage()) {
         static_assert(std::is_same_v<decltype(curr.second), const entt::sparse_set &>);
-        static_assert(std::is_same_v<decltype(curr.first), const entt::id_type>);
+        static_assert(std::is_same_v<decltype(curr.first), entt::id_type>);
 
         ASSERT_TRUE(curr.second.contains(entity));
         ASSERT_EQ(std::addressof(storage), std::addressof(curr.second));
@@ -1979,7 +2092,23 @@ TEST(Registry, StorageProxy) {
     }
 }
 
-TEST(Registry, StorageProxyIterator) {
+TEST(Registry, VoidType) {
+    using namespace entt::literals;
+
+    entt::registry registry;
+    const auto entity = registry.create();
+    auto &storage = registry.storage<void>("custom"_hs);
+    storage.emplace(entity);
+
+    ASSERT_TRUE(registry.storage<void>().empty());
+    ASSERT_FALSE(registry.storage<void>("custom"_hs).empty());
+    ASSERT_TRUE(registry.storage<void>("custom"_hs).contains(entity));
+
+    ASSERT_EQ(registry.storage<void>().type(), entt::type_id<void>());
+    ASSERT_EQ(registry.storage<void>("custom"_hs).type(), entt::type_id<void>());
+}
+
+TEST(Registry, RegistryStorageIterator) {
     entt::registry registry;
     const auto entity = registry.create();
     registry.emplace<int>(entity);
@@ -2032,4 +2161,62 @@ TEST(Registry, StorageProxyIterator) {
 
     ASSERT_EQ(cit, registry.storage().begin());
     ASSERT_NE(cit, std::as_const(registry).storage().end());
+}
+
+TEST(Registry, RegistryStorageIteratorConversion) {
+    entt::registry registry;
+    const auto entity = registry.create();
+    registry.emplace<int>(entity);
+
+    auto proxy = registry.storage();
+    auto cproxy = std::as_const(registry).storage();
+
+    typename decltype(proxy)::iterator it = proxy.begin();
+    typename decltype(cproxy)::iterator cit = it;
+
+    static_assert(std::is_same_v<decltype(*it), std::pair<entt::id_type, entt::sparse_set &>>);
+    static_assert(std::is_same_v<decltype(*cit), std::pair<entt::id_type, const entt::sparse_set &>>);
+
+    ASSERT_EQ(it->first, entt::type_id<int>().hash());
+    ASSERT_EQ((*it).second.type(), entt::type_id<int>());
+    ASSERT_EQ(it->first, cit->first);
+    ASSERT_EQ((*it).second.type(), (*cit).second.type());
+
+    ASSERT_EQ(it - cit, 0);
+    ASSERT_EQ(cit - it, 0);
+    ASSERT_LE(it, cit);
+    ASSERT_LE(cit, it);
+    ASSERT_GE(it, cit);
+    ASSERT_GE(cit, it);
+    ASSERT_EQ(it, cit);
+    ASSERT_NE(++cit, it);
+}
+
+TEST(Registry, NoEtoType) {
+    entt::registry registry;
+    const auto entity = registry.create();
+
+    registry.emplace<no_eto_type>(entity);
+    registry.emplace<int>(entity, 42);
+
+    ASSERT_NE(registry.storage<no_eto_type>().raw(), nullptr);
+    ASSERT_NE(registry.try_get<no_eto_type>(entity), nullptr);
+    ASSERT_EQ(registry.view<no_eto_type>().get(entity), std::as_const(registry).view<const no_eto_type>().get(entity));
+
+    auto view = registry.view<no_eto_type, int>();
+    auto cview = std::as_const(registry).view<const no_eto_type, const int>();
+
+    ASSERT_EQ((std::get<0>(view.get<no_eto_type, int>(entity))), (std::get<0>(cview.get<const no_eto_type, const int>(entity))));
+}
+
+TEST(Registry, CtxAndPoolMemberDestructionOrder) {
+    auto registry = std::make_unique<entt::registry>();
+    const auto entity = registry->create();
+    bool ctx_check = false;
+
+    registry->ctx().emplace<typename destruction_order::ctx_check_type>();
+    registry->emplace<destruction_order>(entity, *registry, ctx_check);
+    registry.reset();
+
+    ASSERT_TRUE(ctx_check);
 }

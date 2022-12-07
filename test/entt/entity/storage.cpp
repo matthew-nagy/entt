@@ -9,9 +9,14 @@
 #include <gtest/gtest.h>
 #include <entt/entity/component.hpp>
 #include <entt/entity/storage.hpp>
+#include "../common/config.h"
 #include "../common/throwing_allocator.hpp"
 #include "../common/throwing_type.hpp"
 #include "../common/tracked_memory_resource.hpp"
+
+struct pinned_type {
+    const int value{42};
+};
 
 struct empty_stable_type {
     static constexpr auto in_place_delete = true;
@@ -40,11 +45,11 @@ struct update_from_destructor {
         : storage{&ref},
           target{other} {}
 
-    update_from_destructor(update_from_destructor &&other) ENTT_NOEXCEPT
+    update_from_destructor(update_from_destructor &&other) noexcept
         : storage{std::exchange(other.storage, nullptr)},
           target{std::exchange(other.target, entt::null)} {}
 
-    update_from_destructor &operator=(update_from_destructor &&other) ENTT_NOEXCEPT {
+    update_from_destructor &operator=(update_from_destructor &&other) noexcept {
         storage = std::exchange(other.storage, nullptr);
         target = std::exchange(other.target, entt::null);
         return *this;
@@ -61,16 +66,16 @@ private:
     entt::entity target{entt::null};
 };
 
-struct crete_from_constructor {
-    crete_from_constructor(entt::storage<crete_from_constructor> &ref, entt::entity other)
+struct create_from_constructor {
+    create_from_constructor(entt::storage<create_from_constructor> &ref, entt::entity other)
         : child{other} {
         if(child != entt::null) {
             ref.emplace(child, ref, entt::null);
         }
     }
 
-    crete_from_constructor(crete_from_constructor &&other) ENTT_NOEXCEPT = default;
-    crete_from_constructor &operator=(crete_from_constructor &&other) ENTT_NOEXCEPT = default;
+    create_from_constructor(create_from_constructor &&other) noexcept = default;
+    create_from_constructor &operator=(create_from_constructor &&other) noexcept = default;
 
     entt::entity child;
 };
@@ -78,23 +83,23 @@ struct crete_from_constructor {
 template<>
 struct entt::component_traits<std::unordered_set<char>> {
     static constexpr auto in_place_delete = true;
-    static constexpr auto ignore_if_empty = ENTT_IGNORE_IF_EMPTY;
-    static constexpr auto page_size = ENTT_PACKED_PAGE;
+    static constexpr auto page_size = 4u;
 };
 
-bool operator==(const boxed_int &lhs, const boxed_int &rhs) {
+inline bool operator==(const boxed_int &lhs, const boxed_int &rhs) {
     return lhs.value == rhs.value;
 }
 
 TEST(Storage, Functionalities) {
     entt::storage<int> pool;
+    constexpr auto page_size = decltype(pool)::traits_type::page_size;
 
-    ASSERT_NO_THROW([[maybe_unused]] auto alloc = pool.get_allocator());
+    ASSERT_NO_FATAL_FAILURE([[maybe_unused]] auto alloc = pool.get_allocator());
     ASSERT_EQ(pool.type(), entt::type_id<int>());
 
     pool.reserve(42);
 
-    ASSERT_EQ(pool.capacity(), ENTT_PACKED_PAGE);
+    ASSERT_EQ(pool.capacity(), page_size);
     ASSERT_TRUE(pool.empty());
     ASSERT_EQ(pool.size(), 0u);
     ASSERT_EQ(std::as_const(pool).begin(), std::as_const(pool).end());
@@ -104,7 +109,7 @@ TEST(Storage, Functionalities) {
 
     pool.reserve(0);
 
-    ASSERT_EQ(pool.capacity(), ENTT_PACKED_PAGE);
+    ASSERT_EQ(pool.capacity(), page_size);
     ASSERT_TRUE(pool.empty());
 
     pool.emplace(entt::entity{41}, 3);
@@ -146,7 +151,7 @@ TEST(Storage, Functionalities) {
     ASSERT_FALSE(pool.contains(entt::entity{0}));
     ASSERT_FALSE(pool.contains(entt::entity{41}));
 
-    ASSERT_EQ(pool.capacity(), ENTT_PACKED_PAGE);
+    ASSERT_EQ(pool.capacity(), page_size);
 
     pool.shrink_to_fit();
 
@@ -245,11 +250,29 @@ TEST(Storage, StableSwap) {
     ASSERT_EQ(other.get(entt::entity{42}).value, 41);
 }
 
+TEST(Storage, VoidType) {
+    entt::storage<void> pool;
+    pool.emplace(entt::entity{99});
+
+    ASSERT_EQ(pool.type(), entt::type_id<void>());
+    ASSERT_TRUE(pool.contains(entt::entity{99}));
+
+    entt::storage<void> other{std::move(pool)};
+
+    ASSERT_FALSE(pool.contains(entt::entity{99}));
+    ASSERT_TRUE(other.contains(entt::entity{99}));
+
+    pool = std::move(other);
+
+    ASSERT_TRUE(pool.contains(entt::entity{99}));
+    ASSERT_FALSE(other.contains(entt::entity{99}));
+}
+
 TEST(Storage, EmptyType) {
     entt::storage<empty_stable_type> pool;
     pool.emplace(entt::entity{99});
 
-    ASSERT_NO_THROW([[maybe_unused]] auto alloc = pool.get_allocator());
+    ASSERT_NO_FATAL_FAILURE([[maybe_unused]] auto alloc = pool.get_allocator());
     ASSERT_EQ(pool.type(), entt::type_id<empty_stable_type>());
     ASSERT_TRUE(pool.contains(entt::entity{99}));
 
@@ -346,6 +369,21 @@ TEST(Storage, Erase) {
     ASSERT_EQ(*pool.begin(), 1);
 }
 
+TEST(Storage, CrossErase) {
+    entt::sparse_set set;
+    entt::storage<int> pool;
+    entt::entity entities[2u]{entt::entity{3}, entt::entity{42}};
+
+    pool.emplace(entities[0u], 3);
+    pool.emplace(entities[1u], 42);
+    set.emplace(entities[1u]);
+    pool.erase(set.begin(), set.end());
+
+    ASSERT_TRUE(pool.contains(entities[0u]));
+    ASSERT_FALSE(pool.contains(entities[1u]));
+    ASSERT_EQ(pool.raw()[0u][0u], 3);
+}
+
 TEST(Storage, StableErase) {
     entt::storage<stable_type> pool;
     entt::entity entities[3u]{entt::entity{3}, entt::entity{42}, entt::entity{9}};
@@ -440,6 +478,21 @@ TEST(Storage, StableErase) {
     ASSERT_EQ(pool.get(entities[2u]).value, 1);
 }
 
+TEST(Storage, CrossStableErase) {
+    entt::sparse_set set;
+    entt::storage<stable_type> pool;
+    entt::entity entities[2u]{entt::entity{3}, entt::entity{42}};
+
+    pool.emplace(entities[0u], 3);
+    pool.emplace(entities[1u], 42);
+    set.emplace(entities[1u]);
+    pool.erase(set.begin(), set.end());
+
+    ASSERT_TRUE(pool.contains(entities[0u]));
+    ASSERT_FALSE(pool.contains(entities[1u]));
+    ASSERT_EQ(pool.raw()[0u][0u].value, 3);
+}
+
 TEST(Storage, Remove) {
     entt::storage<int> pool;
     entt::entity entities[3u]{entt::entity{3}, entt::entity{42}, entt::entity{9}};
@@ -460,8 +513,8 @@ TEST(Storage, Remove) {
     ASSERT_FALSE(pool.empty());
     ASSERT_EQ(*pool.begin(), 2);
 
-    ASSERT_EQ(pool.remove(entities[2u]), 1u);
-    ASSERT_EQ(pool.remove(entities[2u]), 0u);
+    ASSERT_TRUE(pool.remove(entities[2u]));
+    ASSERT_FALSE(pool.remove(entities[2u]));
     ASSERT_TRUE(pool.empty());
 
     pool.emplace(entities[0u], 0);
@@ -472,6 +525,21 @@ TEST(Storage, Remove) {
     ASSERT_EQ(pool.remove(entities, entities + 2u), 2u);
     ASSERT_FALSE(pool.empty());
     ASSERT_EQ(*pool.begin(), 1);
+}
+
+TEST(Storage, CrossRemove) {
+    entt::sparse_set set;
+    entt::storage<int> pool;
+    entt::entity entities[2u]{entt::entity{3}, entt::entity{42}};
+
+    pool.emplace(entities[0u], 3);
+    pool.emplace(entities[1u], 42);
+    set.emplace(entities[1u]);
+    pool.remove(set.begin(), set.end());
+
+    ASSERT_TRUE(pool.contains(entities[0u]));
+    ASSERT_FALSE(pool.contains(entities[1u]));
+    ASSERT_EQ(pool.raw()[0u][0u], 3);
 }
 
 TEST(Storage, StableRemove) {
@@ -507,9 +575,9 @@ TEST(Storage, StableRemove) {
     ASSERT_EQ(pool.begin()->value, 2);
     ASSERT_EQ(pool.index(entities[2u]), 2u);
 
-    ASSERT_EQ(pool.remove(entities[2u]), 1u);
-    ASSERT_EQ(pool.remove(entities[2u]), 0u);
-    ASSERT_EQ(pool.remove(entities[2u]), 0u);
+    ASSERT_TRUE(pool.remove(entities[2u]));
+    ASSERT_FALSE(pool.remove(entities[2u]));
+    ASSERT_FALSE(pool.remove(entities[2u]));
     ASSERT_FALSE(pool.empty());
     ASSERT_EQ(pool.size(), 3u);
     ASSERT_FALSE(pool.contains(entities[0u]));
@@ -542,11 +610,11 @@ TEST(Storage, StableRemove) {
     pool.emplace(entities[1u], stable_type{2});
     pool.emplace(entities[2u], stable_type{1});
 
-    ASSERT_EQ(pool.remove(entities[2u]), 1u);
-    ASSERT_EQ(pool.remove(entities[2u]), 0u);
+    ASSERT_TRUE(pool.remove(entities[2u]));
+    ASSERT_FALSE(pool.remove(entities[2u]));
 
-    ASSERT_EQ(pool.remove(entities[0u]), 1u);
-    ASSERT_EQ(pool.remove(entities[1u]), 1u);
+    ASSERT_TRUE(pool.remove(entities[0u]));
+    ASSERT_TRUE(pool.remove(entities[1u]));
     ASSERT_EQ(pool.remove(entities, entities + 2u), 0u);
 
     ASSERT_EQ(pool.size(), 3u);
@@ -569,6 +637,21 @@ TEST(Storage, StableRemove) {
     ASSERT_EQ(pool.get(entities[0u]).value, 99);
     ASSERT_EQ(pool.get(entities[1u]).value, 2);
     ASSERT_EQ(pool.get(entities[2u]).value, 1);
+}
+
+TEST(Storage, CrossStableRemove) {
+    entt::sparse_set set;
+    entt::storage<stable_type> pool;
+    entt::entity entities[2u]{entt::entity{3}, entt::entity{42}};
+
+    pool.emplace(entities[0u], 3);
+    pool.emplace(entities[1u], 42);
+    set.emplace(entities[1u]);
+    pool.remove(set.begin(), set.end());
+
+    ASSERT_TRUE(pool.contains(entities[0u]));
+    ASSERT_FALSE(pool.contains(entities[1u]));
+    ASSERT_EQ(pool.raw()[0u][0u].value, 3);
 }
 
 TEST(Storage, TypeFromBase) {
@@ -782,25 +865,26 @@ TEST(Storage, Compact) {
 
 TEST(Storage, ShrinkToFit) {
     entt::storage<int> pool;
+    constexpr auto page_size = decltype(pool)::traits_type::page_size;
 
-    for(std::size_t next{}; next < ENTT_PACKED_PAGE; ++next) {
+    for(std::size_t next{}; next < page_size; ++next) {
         pool.emplace(entt::entity(next));
     }
 
-    pool.emplace(entt::entity{ENTT_PACKED_PAGE});
-    pool.erase(entt::entity{ENTT_PACKED_PAGE});
+    pool.emplace(entt::entity{page_size});
+    pool.erase(entt::entity{page_size});
 
-    ASSERT_EQ(pool.capacity(), 2 * ENTT_PACKED_PAGE);
-    ASSERT_EQ(pool.size(), ENTT_PACKED_PAGE);
+    ASSERT_EQ(pool.capacity(), 2 * page_size);
+    ASSERT_EQ(pool.size(), page_size);
 
     pool.shrink_to_fit();
 
-    ASSERT_EQ(pool.capacity(), ENTT_PACKED_PAGE);
-    ASSERT_EQ(pool.size(), ENTT_PACKED_PAGE);
+    ASSERT_EQ(pool.capacity(), page_size);
+    ASSERT_EQ(pool.size(), page_size);
 
     pool.clear();
 
-    ASSERT_EQ(pool.capacity(), ENTT_PACKED_PAGE);
+    ASSERT_EQ(pool.capacity(), page_size);
     ASSERT_EQ(pool.size(), 0u);
 
     pool.shrink_to_fit();
@@ -1113,6 +1197,21 @@ TEST(Storage, IteratorConversion) {
     ASSERT_GE(cit, it);
     ASSERT_EQ(it, cit);
     ASSERT_NE(++cit, it);
+}
+
+TEST(Storage, IteratorPageSizeAwareness) {
+    entt::storage<std::unordered_set<char>> pool;
+    constexpr auto page_size = decltype(pool)::traits_type::page_size;
+    const std::unordered_set<char> check{'c'};
+
+    for(unsigned int next{}; next < page_size; ++next) {
+        pool.emplace(entt::entity{next});
+    }
+
+    pool.emplace(entt::entity{page_size}, check);
+
+    // test the proper use of component traits by the storage iterator
+    ASSERT_EQ(*pool.begin(), check);
 }
 
 TEST(Storage, Iterable) {
@@ -1509,13 +1608,14 @@ TEST(Storage, RespectUnordered) {
 TEST(Storage, CanModifyDuringIteration) {
     entt::storage<int> pool;
     auto *ptr = &pool.emplace(entt::entity{0}, 42);
+    constexpr auto page_size = decltype(pool)::traits_type::page_size;
 
-    ASSERT_EQ(pool.capacity(), ENTT_PACKED_PAGE);
+    ASSERT_EQ(pool.capacity(), page_size);
 
     const auto it = pool.cbegin();
-    pool.reserve(ENTT_PACKED_PAGE + 1u);
+    pool.reserve(page_size + 1u);
 
-    ASSERT_EQ(pool.capacity(), 2 * ENTT_PACKED_PAGE);
+    ASSERT_EQ(pool.capacity(), 2 * page_size);
     ASSERT_EQ(&pool.get(entt::entity{0}), ptr);
 
     // this should crash with asan enabled if we break the constraint
@@ -1555,10 +1655,32 @@ TEST(Storage, MoveOnlyComponent) {
     [[maybe_unused]] entt::storage<std::unique_ptr<int>> pool;
 }
 
-TEST(Storage, UpdateFromDestructor) {
-    static constexpr auto size = 10u;
+TEST(Storage, PinnedComponent) {
+    // the purpose is to ensure that non-movable components are always accepted
+    [[maybe_unused]] entt::storage<pinned_type> pool;
+}
 
+ENTT_DEBUG_TEST(StorageDeathTest, PinnedComponent) {
+    entt::storage<pinned_type> pool;
+    const entt::entity entity{0};
+    const entt::entity destroy{1};
+    const entt::entity other{2};
+
+    pool.emplace(entity);
+    pool.emplace(destroy);
+    pool.emplace(other);
+
+    pool.erase(destroy);
+
+    ASSERT_DEATH(pool.swap_elements(entity, other), "");
+    ASSERT_DEATH(pool.compact(), "");
+    ASSERT_DEATH(pool.sort([](auto &&lhs, auto &&rhs) { return lhs < rhs; }), "");
+}
+
+TEST(Storage, UpdateFromDestructor) {
     auto test = [](const auto target) {
+        constexpr auto size = 10u;
+
         entt::storage<update_from_destructor> pool;
 
         for(std::size_t next{}; next < size; ++next) {
@@ -1581,13 +1703,13 @@ TEST(Storage, UpdateFromDestructor) {
         }
     };
 
-    test(entt::entity(size - 1u));
-    test(entt::entity(size - 2u));
+    test(entt::entity{9u});
+    test(entt::entity{8u});
     test(entt::entity{0u});
 }
 
 TEST(Storage, CreateFromConstructor) {
-    entt::storage<crete_from_constructor> pool;
+    entt::storage<create_from_constructor> pool;
     const entt::entity entity{0u};
     const entt::entity other{1u};
 
@@ -1639,9 +1761,9 @@ TEST(Storage, CustomAllocator) {
 
     test::throwing_allocator<entt::entity> allocator{};
 
-    test(entt::basic_storage<entt::entity, int, test::throwing_allocator<int>>{allocator}, allocator);
-    test(entt::basic_storage<entt::entity, std::true_type, test::throwing_allocator<std::true_type>>{allocator}, allocator);
-    test(entt::basic_storage<entt::entity, stable_type, test::throwing_allocator<stable_type>>{allocator}, allocator);
+    test(entt::basic_storage<int, entt::entity, test::throwing_allocator<int>>{allocator}, allocator);
+    test(entt::basic_storage<std::true_type, entt::entity, test::throwing_allocator<std::true_type>>{allocator}, allocator);
+    test(entt::basic_storage<stable_type, entt::entity, test::throwing_allocator<stable_type>>{allocator}, allocator);
 }
 
 TEST(Storage, ThrowingAllocator) {
@@ -1650,6 +1772,8 @@ TEST(Storage, ThrowingAllocator) {
         using value_type = typename decltype(pool)::value_type;
 
         typename std::decay_t<decltype(pool)>::base_type &base = pool;
+        constexpr auto packed_page_size = decltype(pool)::traits_type::page_size;
+        constexpr auto sparse_page_size = std::remove_reference_t<decltype(base)>::traits_type::page_size;
 
         pool_allocator_type::trigger_on_allocate = true;
 
@@ -1658,8 +1782,8 @@ TEST(Storage, ThrowingAllocator) {
 
         pool_allocator_type::trigger_after_allocate = true;
 
-        ASSERT_THROW(pool.reserve(2 * ENTT_PACKED_PAGE), typename pool_allocator_type::exception_type);
-        ASSERT_EQ(pool.capacity(), ENTT_PACKED_PAGE);
+        ASSERT_THROW(pool.reserve(2 * packed_page_size), typename pool_allocator_type::exception_type);
+        ASSERT_EQ(pool.capacity(), packed_page_size);
 
         pool.shrink_to_fit();
 
@@ -1681,29 +1805,29 @@ TEST(Storage, ThrowingAllocator) {
 
         ASSERT_THROW(pool.emplace(entt::entity{0}, 0), typename pool_allocator_type::exception_type);
         ASSERT_FALSE(pool.contains(entt::entity{0}));
-        ASSERT_NO_THROW(pool.compact());
+        ASSERT_NO_FATAL_FAILURE(pool.compact());
         ASSERT_TRUE(pool.empty());
 
         pool.emplace(entt::entity{0}, 0);
-        const entt::entity entities[2u]{entt::entity{1}, entt::entity{ENTT_SPARSE_PAGE}};
+        const entt::entity entities[2u]{entt::entity{1}, entt::entity{sparse_page_size}};
         test::throwing_allocator<entt::entity>::trigger_after_allocate = true;
 
         ASSERT_THROW(pool.insert(std::begin(entities), std::end(entities), value_type{0}), test::throwing_allocator<entt::entity>::exception_type);
         ASSERT_TRUE(pool.contains(entt::entity{1}));
-        ASSERT_FALSE(pool.contains(entt::entity{ENTT_SPARSE_PAGE}));
+        ASSERT_FALSE(pool.contains(entt::entity{sparse_page_size}));
 
         pool.erase(entt::entity{1});
-        const value_type components[2u]{value_type{1}, value_type{ENTT_SPARSE_PAGE}};
+        const value_type components[2u]{value_type{1}, value_type{sparse_page_size}};
         test::throwing_allocator<entt::entity>::trigger_on_allocate = true;
         pool.compact();
 
         ASSERT_THROW(pool.insert(std::begin(entities), std::end(entities), std::begin(components)), test::throwing_allocator<entt::entity>::exception_type);
         ASSERT_TRUE(pool.contains(entt::entity{1}));
-        ASSERT_FALSE(pool.contains(entt::entity{ENTT_SPARSE_PAGE}));
+        ASSERT_FALSE(pool.contains(entt::entity{sparse_page_size}));
     };
 
-    test(entt::basic_storage<entt::entity, int, test::throwing_allocator<int>>{});
-    test(entt::basic_storage<entt::entity, stable_type, test::throwing_allocator<stable_type>>{});
+    test(entt::basic_storage<int, entt::entity, test::throwing_allocator<int>>{});
+    test(entt::basic_storage<stable_type, entt::entity, test::throwing_allocator<stable_type>>{});
 }
 
 TEST(Storage, ThrowingComponent) {
@@ -1762,7 +1886,7 @@ TEST(Storage, ThrowingComponent) {
 
 TEST(Storage, NoUsesAllocatorConstruction) {
     test::tracked_memory_resource memory_resource{};
-    entt::basic_storage<entt::entity, int, std::pmr::polymorphic_allocator<int>> pool{&memory_resource};
+    entt::basic_storage<int, entt::entity, std::pmr::polymorphic_allocator<int>> pool{&memory_resource};
     const entt::entity entity{};
 
     pool.emplace(entity);
@@ -1779,7 +1903,7 @@ TEST(Storage, UsesAllocatorConstruction) {
     using string_type = typename test::tracked_memory_resource::string_type;
 
     test::tracked_memory_resource memory_resource{};
-    entt::basic_storage<entt::entity, string_type, std::pmr::polymorphic_allocator<string_type>> pool{&memory_resource};
+    entt::basic_storage<string_type, entt::entity, std::pmr::polymorphic_allocator<string_type>> pool{&memory_resource};
     const entt::entity entity{};
 
     pool.emplace(entity);
@@ -1790,6 +1914,20 @@ TEST(Storage, UsesAllocatorConstruction) {
     ASSERT_TRUE(pool.get_allocator().resource()->is_equal(memory_resource));
     ASSERT_GT(memory_resource.do_allocate_counter(), 0u);
     ASSERT_EQ(memory_resource.do_deallocate_counter(), 0u);
+}
+
+TEST(Storage, StorageType) {
+    // just a bunch of static asserts to avoid regressions
+    static_assert(std::is_same_v<entt::storage_type_t<char, entt::entity>, entt::sigh_storage_mixin<entt::basic_storage<char, entt::entity>>>);
+    static_assert(std::is_same_v<entt::storage_type_t<int>, entt::sigh_storage_mixin<entt::storage<int>>>);
+}
+
+TEST(Storage, StorageFor) {
+    // just a bunch of static asserts to avoid regressions
+    static_assert(std::is_same_v<entt::storage_for_t<const double, entt::entity>, const entt::sigh_storage_mixin<entt::basic_storage<double, entt::entity>>>);
+    static_assert(std::is_same_v<entt::storage_for_t<char, entt::entity>, entt::sigh_storage_mixin<entt::basic_storage<char, entt::entity>>>);
+    static_assert(std::is_same_v<entt::storage_for_t<const bool>, const entt::sigh_storage_mixin<entt::storage<bool>>>);
+    static_assert(std::is_same_v<entt::storage_for_t<int>, entt::sigh_storage_mixin<entt::storage<int>>>);
 }
 
 #endif

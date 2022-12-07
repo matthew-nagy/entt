@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 #include <entt/core/memory.hpp>
 #include "../common/basic_test_allocator.hpp"
+#include "../common/config.h"
 #include "../common/throwing_allocator.hpp"
 #include "../common/throwing_type.hpp"
 #include "../common/tracked_memory_resource.hpp"
@@ -23,10 +24,20 @@ TEST(ToAddress, Functionalities) {
 
 TEST(PoccaPocmaAndPocs, Functionalities) {
     test::basic_test_allocator<int> lhs, rhs;
+
+    // code coverage purposes
+    ASSERT_FALSE(lhs == rhs);
+
     // honestly, I don't even know how one is supposed to test such a thing :)
     entt::propagate_on_container_copy_assignment(lhs, rhs);
     entt::propagate_on_container_move_assignment(lhs, rhs);
     entt::propagate_on_container_swap(lhs, rhs);
+}
+
+ENTT_DEBUG_TEST(PoccaPocmaAndPocsDeathTest, Functionalities) {
+    using pocs = std::false_type;
+    test::basic_test_allocator<int, pocs> lhs, rhs;
+    ASSERT_DEATH(entt::propagate_on_container_swap(lhs, rhs), "");
 }
 
 TEST(IsPowerOfTwo, Functionalities) {
@@ -53,11 +64,11 @@ TEST(NextPowerOfTwo, Functionalities) {
     ASSERT_EQ(entt::next_power_of_two(17u), 32u);
     ASSERT_EQ(entt::next_power_of_two(32u), 32u);
     ASSERT_EQ(entt::next_power_of_two(33u), 64u);
-    ASSERT_EQ(entt::next_power_of_two(std::pow(2, 16)), std::pow(2, 16));
-    ASSERT_EQ(entt::next_power_of_two(std::pow(2, 16) + 1u), std::pow(2, 17));
+    ASSERT_EQ(entt::next_power_of_two(static_cast<std::size_t>(std::pow(2, 16))), static_cast<std::size_t>(std::pow(2, 16)));
+    ASSERT_EQ(entt::next_power_of_two(static_cast<std::size_t>(std::pow(2, 16) + 1u)), static_cast<std::size_t>(std::pow(2, 17)));
 }
 
-TEST(NextPowerOfTwoDeathTest, Functionalities) {
+ENTT_DEBUG_TEST(NextPowerOfTwoDeathTest, Functionalities) {
     ASSERT_DEATH(static_cast<void>(entt::next_power_of_two((std::size_t{1u} << (std::numeric_limits<std::size_t>::digits - 1)) + 1)), "");
 }
 
@@ -205,7 +216,7 @@ TEST(MakeObjUsingAllocator, Functionalities) {
 }
 
 TEST(UninitializedConstructUsingAllocator, NoUsesAllocatorConstruction) {
-    std::aligned_storage_t<sizeof(int)> storage;
+    alignas(int) std::byte storage[sizeof(int)];
     std::allocator<int> allocator{};
 
     int *value = entt::uninitialized_construct_using_allocator(reinterpret_cast<int *>(&storage), allocator, 42);
@@ -220,7 +231,7 @@ TEST(UninitializedConstructUsingAllocator, UsesAllocatorConstruction) {
 
     test::tracked_memory_resource memory_resource{};
     std::pmr::polymorphic_allocator<string_type> allocator{&memory_resource};
-    std::aligned_storage_t<sizeof(string_type)> storage;
+    alignas(string_type) std::byte storage[sizeof(string_type)];
 
     string_type *value = entt::uninitialized_construct_using_allocator(reinterpret_cast<string_type *>(&storage), allocator, test::tracked_memory_resource::default_value);
 
