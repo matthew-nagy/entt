@@ -1,6 +1,7 @@
+#include <memory>
 #include <gtest/gtest.h>
 #include <entt/locator/locator.hpp>
-#include "../common/throwing_allocator.hpp"
+#include "../common/config.h"
 
 struct base_service {
     virtual ~base_service() = default;
@@ -34,6 +35,7 @@ using ServiceLocatorDeathTest = ServiceLocator;
 
 TEST(ServiceLocator, Functionalities) {
     ASSERT_FALSE(entt::locator<base_service>::has_value());
+    ASSERT_FALSE(derived_service::invoked);
     ASSERT_FALSE(null_service::invoked);
 
     entt::locator<base_service>::value_or<null_service>().invoke();
@@ -41,10 +43,18 @@ TEST(ServiceLocator, Functionalities) {
     ASSERT_TRUE(entt::locator<base_service>::has_value());
     ASSERT_TRUE(null_service::invoked);
 
+    auto handle = entt::locator<base_service>::handle();
     entt::locator<base_service>::reset();
 
     ASSERT_FALSE(entt::locator<base_service>::has_value());
-    ASSERT_FALSE(derived_service::invoked);
+
+    entt::locator<base_service>::reset(handle);
+
+    ASSERT_TRUE(entt::locator<base_service>::has_value());
+
+    entt::locator<base_service>::reset(decltype(handle){});
+
+    ASSERT_FALSE(entt::locator<base_service>::has_value());
 
     entt::locator<base_service>::emplace<derived_service>();
     entt::locator<base_service>::value().invoke();
@@ -59,7 +69,7 @@ TEST(ServiceLocator, Functionalities) {
     ASSERT_TRUE(derived_service::invoked);
 }
 
-TEST(ServiceLocatorDeathTest, UninitializedValue) {
+ENTT_DEBUG_TEST(ServiceLocatorDeathTest, UninitializedValue) {
     ASSERT_NO_FATAL_FAILURE(entt::locator<base_service>::value_or().invoke());
 
     entt::locator<base_service>::reset();

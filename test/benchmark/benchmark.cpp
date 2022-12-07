@@ -4,8 +4,8 @@
 #include <utility>
 #include <vector>
 #include <gtest/gtest.h>
-#include <entt/core/type_info.hpp>
 #include <entt/entity/registry.hpp>
+#include <entt/entity/runtime_view.hpp>
 
 struct position {
     std::uint64_t x;

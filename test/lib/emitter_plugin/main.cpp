@@ -2,7 +2,6 @@
 
 #include <gtest/gtest.h>
 #include <cr.h>
-#include <entt/signal/emitter.hpp>
 #include "types.h"
 
 TEST(Lib, Emitter) {
@@ -11,7 +10,10 @@ TEST(Lib, Emitter) {
 
     ASSERT_EQ(value, 0);
 
-    emitter.once<message>([&](message msg, test_emitter &) { value = msg.payload; });
+    emitter.on<message>([&](message msg, test_emitter &owner) {
+        value = msg.payload;
+        owner.erase<message>();
+    });
 
     cr_plugin ctx;
     cr_plugin_load(ctx, PLUGIN);

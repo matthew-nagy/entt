@@ -20,6 +20,9 @@ I hope this list can grow much more in the future:
   * [Minecraft Earth](https://www.minecraft.net/en-us/about-earth) by
     [Mojang](https://mojang.com/): an augmented reality game for mobile, that
     lets users bring Minecraft into the real world.
+  * [Ember Sword](https://embersword.com/): a modern Free-to-Play MMORPG with a
+    player-driven economy, a classless combat system, and scarce, tradable
+    cosmetic collectibles.
   * Apparently [Diablo II: Resurrected](https://diablo2.blizzard.com/) by
     [Blizzard](https://www.blizzard.com/): monsters, heroes, items, spells, all
     resurrected. Thanks unknown insider.
@@ -51,7 +54,7 @@ I hope this list can grow much more in the future:
     puzzler with logic gates and other cool stuff.
     [Check it out](https://indi-kernick.itch.io/the-machine-web-version).
   * [EnTTPong](https://github.com/DomRe/EnttPong): a basic game made to showcase
-    different parts of EnTT and C++17.
+    different parts of `EnTT` and C++17.
   * [Randballs](https://github.com/gale93/randballs): simple `SFML` and `EnTT`
     playground.
   * [EnTT Tower Defense](https://github.com/Daivuk/tddod): a data oriented tower
@@ -91,6 +94,14 @@ I hope this list can grow much more in the future:
     town, before it's too late.
   * [City Builder Game](https://github.com/PhiGei2000/CityBuilderGame): a simple
     city-building game using C++ and OpenGL.
+  * [BattleSub](https://github.com/bfeldpw/battlesub): two player 2D submarine
+    game with some fluid dynamics.
+  * [Crimson Rush](https://github.com/WilKam01/LuaCGame): a dungeon-crawler and
+    rougelike inspired game about exploring and surviving as long as possible.
+  * [Space Fight](https://github.com/cholushkin/SpaceFight): one screen
+    multi-player arcade shooter game prototype.
+  * [Confetti Party](https://github.com/hexerei/entt-confetti): C++ sample
+    application as a starting point using `EnTT` and `SDL2`.
 
 * Engines and the like:
   * [Aether Engine](https://hadean.com/spatial-simulation/)
@@ -146,11 +157,25 @@ I hope this list can grow much more in the future:
     oriented game engine.
   * [Becketron](https://github.com/Doctor-Foxling/Becketron): a game engine
     written mostly in C++.
-  * [Spatial Engine](https://github.com/luizgabriel/Spatial.Engine): A
+  * [Spatial Engine](https://github.com/luizgabriel/Spatial.Engine): a
     cross-platform engine created on top of google's filament rendering engine.
   * [Kaguya](https://github.com/KaiH0717/Kaguya): D3D12 Rendering Engine.
-  * [OpenAWE](https://github.com/OpenAWE-Project/OpenAWE): Open implementation
+  * [OpenAWE](https://github.com/OpenAWE-Project/OpenAWE): open implementation
     of the Alan Wake Engine.
+  * [Nazara Engine](https://github.com/DigitalPulseSoftware/NazaraEngine): fast,
+    cross-platform, object-oriented API to help in daily developer life.
+  * [Billy Engine](https://github.com/billy4479/BillyEngine): some kind of a 2D
+    engine based on `SDL2` and `EnTT`.
+  * [Ducktape](https://github.com/DucktapeEngine/Ducktape): an open source C++
+    2D & 3D game engine that focuses on being fast and powerful.
+  * [The Worst Engine](https://github.com/Parasik72/TWE): a game engine based on
+    OpenGL.
+  * [Ecsact](https://ecsact.dev/): a language aimed at describing ECS, with a
+    [runtime implementation](https://github.com/ecsact-dev/ecsact_rt_entt) based
+    on `EnTT`.
+  * [AGE (Arc Game Engine)](https://github.com/MohitSethi99/ArcGameEngine): an
+    open-source engine for building 2D & 3D real-time rendering and interactive
+    contents.
 
 * Articles, videos and blog posts:
   * [Some posts](https://skypjack.github.io/tags/#entt) on my personal
@@ -198,6 +223,9 @@ I hope this list can grow much more in the future:
     project retrospect by [Eric Hildebrand](https://www.erichildebrand.net/).
   * [EnTT Entity Component System Gaming Library](https://gamefromscratch.com/entt-entity-component-system-gaming-library/):
     `EnTT` on GameFromScratch.com.
+  * [Custom C++ server for UE5](https://youtu.be/fbXZVNCOvjM) optimized for
+    MMO(RPG)s and its [follow-up](https://youtu.be/yGlZeopx2hU) episode about
+    player bots and full external ECS: a series definitely worth looking at.
 
 * Any Other Business:
   * [ArcGIS Runtime SDKs](https://developers.arcgis.com/arcgis-runtime/) by

@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <entt/core/type_traits.hpp>
 #include <entt/entity/entity.hpp>
 #include <entt/entity/helper.hpp>
 #include <entt/entity/registry.hpp>
@@ -17,14 +16,18 @@ struct stable_type {
     int value;
 };
 
+void sigh_callback(int &value) {
+    ++value;
+}
+
 TEST(Helper, AsView) {
     entt::registry registry;
     const entt::registry cregistry;
 
     ([](entt::view<entt::get_t<int>>) {})(entt::as_view{registry});
     ([](entt::view<entt::get_t<char, double>, entt::exclude_t<int>>) {})(entt::as_view{registry});
-    ([](entt::view<entt::get_t<const char, double>, entt::exclude_t<int>>) {})(entt::as_view{registry});
-    ([](entt::view<entt::get_t<const char, const double>, entt::exclude_t<int>>) {})(entt::as_view{cregistry});
+    ([](entt::view<entt::get_t<const char, double>, entt::exclude_t<const int>>) {})(entt::as_view{registry});
+    ([](entt::view<entt::get_t<const char, const double>, entt::exclude_t<const int>>) {})(entt::as_view{cregistry});
 }
 
 TEST(Helper, AsGroup) {
@@ -32,8 +35,8 @@ TEST(Helper, AsGroup) {
     const entt::registry cregistry;
 
     ([](entt::group<entt::owned_t<double>, entt::get_t<char>, entt::exclude_t<int>>) {})(entt::as_group{registry});
-    ([](entt::group<entt::owned_t<double>, entt::get_t<const char>, entt::exclude_t<int>>) {})(entt::as_group{registry});
-    ([](entt::group<entt::owned_t<const double>, entt::get_t<const char>, entt::exclude_t<int>>) {})(entt::as_group{cregistry});
+    ([](entt::group<entt::owned_t<double>, entt::get_t<const char>, entt::exclude_t<const int>>) {})(entt::as_group{registry});
+    ([](entt::group<entt::owned_t<const double>, entt::get_t<const char>, entt::exclude_t<const int>>) {})(entt::as_group{cregistry});
 }
 
 TEST(Helper, Invoke) {
@@ -49,6 +52,7 @@ TEST(Helper, Invoke) {
 TEST(Helper, ToEntity) {
     entt::registry registry;
     const entt::entity null = entt::null;
+    constexpr auto page_size = entt::storage_for_t<int>::traits_type::page_size;
     const int value = 42;
 
     ASSERT_EQ(entt::to_entity(registry, 42), null);
@@ -58,7 +62,7 @@ TEST(Helper, ToEntity) {
     auto &&storage = registry.storage<int>();
     storage.emplace(entity);
 
-    while(storage.size() < (ENTT_PACKED_PAGE - 1u)) {
+    while(storage.size() < (page_size - 1u)) {
         storage.emplace(registry.create(), value);
     }
 
@@ -72,14 +76,14 @@ TEST(Helper, ToEntity) {
     ASSERT_EQ(entt::to_entity(registry, registry.get<int>(other)), other);
     ASSERT_EQ(entt::to_entity(registry, registry.get<int>(next)), next);
 
-    ASSERT_EQ(&registry.get<int>(entity) + ENTT_PACKED_PAGE - 1u, &registry.get<int>(other));
+    ASSERT_EQ(&registry.get<int>(entity) + page_size - 1u, &registry.get<int>(other));
 
     registry.destroy(other);
 
     ASSERT_EQ(entt::to_entity(registry, registry.get<int>(entity)), entity);
     ASSERT_EQ(entt::to_entity(registry, registry.get<int>(next)), next);
 
-    ASSERT_EQ(&registry.get<int>(entity) + ENTT_PACKED_PAGE - 1u, &registry.get<int>(next));
+    ASSERT_EQ(&registry.get<int>(entity) + page_size - 1u, &registry.get<int>(next));
 
     ASSERT_EQ(entt::to_entity(registry, 42), null);
     ASSERT_EQ(entt::to_entity(registry, value), null);
@@ -88,6 +92,7 @@ TEST(Helper, ToEntity) {
 TEST(Helper, ToEntityStableType) {
     entt::registry registry;
     const entt::entity null = entt::null;
+    constexpr auto page_size = entt::storage_for_t<stable_type>::traits_type::page_size;
     const stable_type value{42};
 
     ASSERT_EQ(entt::to_entity(registry, stable_type{42}), null);
@@ -97,7 +102,7 @@ TEST(Helper, ToEntityStableType) {
     auto &&storage = registry.storage<stable_type>();
     registry.emplace<stable_type>(entity);
 
-    while(storage.size() < (ENTT_PACKED_PAGE - 2u)) {
+    while(storage.size() < (page_size - 2u)) {
         storage.emplace(registry.create(), value);
     }
 
@@ -111,15 +116,37 @@ TEST(Helper, ToEntityStableType) {
     ASSERT_EQ(entt::to_entity(registry, registry.get<stable_type>(other)), other);
     ASSERT_EQ(entt::to_entity(registry, registry.get<stable_type>(next)), next);
 
-    ASSERT_EQ(&registry.get<stable_type>(entity) + ENTT_PACKED_PAGE - 2u, &registry.get<stable_type>(other));
+    ASSERT_EQ(&registry.get<stable_type>(entity) + page_size - 2u, &registry.get<stable_type>(other));
 
     registry.destroy(other);
 
     ASSERT_EQ(entt::to_entity(registry, registry.get<stable_type>(entity)), entity);
     ASSERT_EQ(entt::to_entity(registry, registry.get<stable_type>(next)), next);
 
-    ASSERT_EQ(&registry.get<stable_type>(entity) + ENTT_PACKED_PAGE - 1u, &registry.get<stable_type>(next));
+    ASSERT_EQ(&registry.get<stable_type>(entity) + page_size - 1u, &registry.get<stable_type>(next));
 
     ASSERT_EQ(entt::to_entity(registry, stable_type{42}), null);
     ASSERT_EQ(entt::to_entity(registry, value), null);
+}
+
+TEST(Helper, SighHelper) {
+    entt::registry registry{};
+    const auto entt = registry.create();
+    entt::sigh_helper helper{registry};
+    int counter{};
+
+    ASSERT_EQ(&helper.registry(), &registry);
+
+    helper.with<int>()
+        .on_construct<&sigh_callback>(counter)
+        .on_update<&sigh_callback>(counter)
+        .on_destroy<&sigh_callback>(counter);
+
+    ASSERT_EQ(counter, 0);
+
+    registry.emplace<int>(entt, 42);
+    registry.replace<int>(entt, 0);
+    registry.erase<int>(entt);
+
+    ASSERT_EQ(counter, 3);
 }
