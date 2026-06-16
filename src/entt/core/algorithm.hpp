@@ -2,11 +2,13 @@
 #define ENTT_CORE_ALGORITHM_HPP
 
 #include <algorithm>
+#include <concepts>
 #include <functional>
 #include <iterator>
 #include <utility>
 #include <vector>
-#include "utility.hpp"
+#include "../stl/functional.hpp"
+#include "../stl/iterator.hpp"
 
 namespace entt {
 
@@ -24,7 +26,6 @@ struct std_sort {
      *
      * Sorts the elements in a range using the given binary comparison function.
      *
-     * @tparam It Type of random access iterator.
      * @tparam Compare Type of comparison function object.
      * @tparam Args Types of arguments to forward to the sort function.
      * @param first An iterator to the first element of the range to sort.
@@ -32,8 +33,8 @@ struct std_sort {
      * @param compare A valid comparison function object.
      * @param args Arguments to forward to the sort function, if any.
      */
-    template<typename It, typename Compare = std::less<>, typename... Args>
-    void operator()(It first, It last, Compare compare = Compare{}, Args &&...args) const {
+    template<typename Compare = std::less<>, typename... Args>
+    void operator()(stl::random_access_iterator auto first, stl::random_access_iterator auto last, Compare compare = Compare{}, Args &&...args) const {
         std::sort(std::forward<Args>(args)..., std::move(first), std::move(last), std::move(compare));
     }
 };
@@ -45,22 +46,23 @@ struct insertion_sort {
      *
      * Sorts the elements in a range using the given binary comparison function.
      *
-     * @tparam It Type of random access iterator.
      * @tparam Compare Type of comparison function object.
      * @param first An iterator to the first element of the range to sort.
      * @param last An iterator past the last element of the range to sort.
      * @param compare A valid comparison function object.
      */
-    template<typename It, typename Compare = std::less<>>
-    void operator()(It first, It last, Compare compare = Compare{}) const {
+    template<typename Compare = std::less<>>
+    void operator()(stl::random_access_iterator auto first, stl::random_access_iterator auto last, Compare compare = Compare{}) const {
         if(first < last) {
             for(auto it = first + 1; it < last; ++it) {
                 auto value = std::move(*it);
                 auto pre = it;
 
+                // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
                 for(; pre > first && compare(value, *(pre - 1)); --pre) {
                     *pre = std::move(*(pre - 1));
                 }
+                // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
                 *pre = std::move(value);
             }
@@ -74,9 +76,8 @@ struct insertion_sort {
  * @tparam N Maximum number of bits to sort.
  */
 template<std::size_t Bit, std::size_t N>
+requires ((N % Bit) == 0) // The maximum number of bits to sort must be a multiple of the number of bits processed per pass
 struct radix_sort {
-    static_assert((N % Bit) == 0, "The maximum number of bits to sort must be a multiple of the number of bits processed per pass");
-
     /**
      * @brief Sorts the elements in a range.
      *
@@ -92,35 +93,40 @@ struct radix_sort {
      * @param last An iterator past the last element of the range to sort.
      * @param getter A valid _getter_ function object.
      */
-    template<typename It, typename Getter = identity>
+    template<stl::random_access_iterator It, typename Getter = stl::identity>
     void operator()(It first, It last, Getter getter = Getter{}) const {
         if(first < last) {
             constexpr auto passes = N / Bit;
 
-            using value_type = typename std::iterator_traits<It>::value_type;
-            std::vector<value_type> aux(std::distance(first, last));
+            using value_type = std::iterator_traits<It>::value_type;
+            using difference_type = std::iterator_traits<It>::difference_type;
+            std::vector<value_type> aux(static_cast<std::size_t>(std::distance(first, last)));
 
             auto part = [getter = std::move(getter)](auto from, auto to, auto out, auto start) {
                 constexpr auto mask = (1 << Bit) - 1;
                 constexpr auto buckets = 1 << Bit;
 
-                std::size_t index[buckets]{};
+                // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, misc-const-correctness)
                 std::size_t count[buckets]{};
 
                 for(auto it = from; it != to; ++it) {
                     ++count[(getter(*it) >> start) & mask];
                 }
 
+                // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
+                std::size_t index[buckets]{};
+
                 for(std::size_t pos{}, end = buckets - 1u; pos < end; ++pos) {
                     index[pos + 1u] = index[pos] + count[pos];
                 }
 
                 for(auto it = from; it != to; ++it) {
-                    out[index[(getter(*it) >> start) & mask]++] = std::move(*it);
+                    const auto pos = index[(getter(*it) >> start) & mask]++;
+                    out[static_cast<difference_type>(pos)] = std::move(*it);
                 }
             };
 
-            for(std::size_t pass = 0; pass < (passes & ~1); pass += 2) {
+            for(std::size_t pass = 0; pass < (passes & ~1u); pass += 2) {
                 part(first, last, aux.begin(), pass * Bit);
                 part(aux.begin(), aux.end(), first, (pass + 1) * Bit);
             }

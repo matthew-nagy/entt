@@ -5,60 +5,52 @@
 
 namespace entt {
 
-/*! @brief Empty class type used to request the _as ref_ policy. */
-struct as_ref_t final {
-    /**
-     * @cond TURN_OFF_DOXYGEN
-     * Internal details not to be documented.
-     */
-    template<typename Type>
-    static constexpr bool value = std::is_reference_v<Type> && !std::is_const_v<std::remove_reference_t<Type>>;
-    /**
-     * Internal details not to be documented.
-     * @endcond
-     */
-};
+/*! @cond ENTT_INTERNAL */
+namespace internal {
 
-/*! @brief Empty class type used to request the _as cref_ policy. */
-struct as_cref_t final {
-    /**
-     * @cond TURN_OFF_DOXYGEN
-     * Internal details not to be documented.
-     */
-    template<typename Type>
-    static constexpr bool value = std::is_reference_v<Type>;
-    /**
-     * Internal details not to be documented.
-     * @endcond
-     */
-};
+struct meta_policy {};
+
+} // namespace internal
+/*! @endcond */
 
 /*! @brief Empty class type used to request the _as-is_ policy. */
-struct as_is_t final {
-    /**
-     * @cond TURN_OFF_DOXYGEN
-     * Internal details not to be documented.
-     */
+struct as_value_t final: private internal::meta_policy {
+    /*! @cond ENTT_INTERNAL */
     template<typename>
     static constexpr bool value = true;
-    /**
-     * Internal details not to be documented.
-     * @endcond
-     */
+    /*! @endcond */
 };
 
 /*! @brief Empty class type used to request the _as void_ policy. */
-struct as_void_t final {
-    /**
-     * @cond TURN_OFF_DOXYGEN
-     * Internal details not to be documented.
-     */
+struct as_void_t final: private internal::meta_policy {
+    /*! @cond ENTT_INTERNAL */
     template<typename>
     static constexpr bool value = true;
-    /**
-     * Internal details not to be documented.
-     * @endcond
-     */
+    /*! @endcond */
+};
+
+/*! @brief Empty class type used to request the _as ref_ policy. */
+struct as_ref_t final: private internal::meta_policy {
+    /*! @cond ENTT_INTERNAL */
+    template<typename Type>
+    static constexpr bool value = std::is_reference_v<Type> && !std::is_const_v<std::remove_reference_t<Type>>;
+    /*! @endcond */
+};
+
+/*! @brief Empty class type used to request the _as cref_ policy. */
+struct as_cref_t final: private internal::meta_policy {
+    /*! @cond ENTT_INTERNAL */
+    template<typename Type>
+    static constexpr bool value = std::is_reference_v<Type>;
+    /*! @endcond */
+};
+
+/*! @brief Empty class type used to request the _as auto_ policy. */
+struct as_is_t final: private internal::meta_policy {
+    /*! @cond ENTT_INTERNAL */
+    template<typename>
+    static constexpr bool value = true;
+    /*! @endcond */
 };
 
 /**
@@ -68,11 +60,7 @@ struct as_void_t final {
  */
 template<typename Type>
 struct is_meta_policy
-    : std::disjunction<
-          std::is_same<Type, as_ref_t>,
-          std::is_same<Type, as_cref_t>,
-          std::is_same<Type, as_is_t>,
-          std::is_same<Type, as_void_t>> {};
+    : std::bool_constant<std::is_base_of_v<internal::meta_policy, Type>> {};
 
 /**
  * @brief Helper variable template.
@@ -80,6 +68,13 @@ struct is_meta_policy
  */
 template<typename Type>
 inline constexpr bool is_meta_policy_v = is_meta_policy<Type>::value;
+
+/**
+ * @brief Specifies whether a type is a meta policy.
+ * @tparam Type Type to check.
+ */
+template<typename Type>
+concept meta_policy = is_meta_policy_v<Type>;
 
 } // namespace entt
 

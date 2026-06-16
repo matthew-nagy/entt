@@ -11,12 +11,12 @@ jobs:
       matrix:
         compiler: [clang++]
         id_type: ["std::uint32_t", "std::uint64_t"]
-        cxx_std: [cxx_std_17, cxx_std_20]
+        cxx_std: [cxx_std_20, cxx_std_23]
 
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Compile tests
       working-directory: build
       env:
@@ -28,4 +28,4 @@ jobs:
       working-directory: build
       env:
         CTEST_OUTPUT_ON_FAILURE: 1
-      run: ctest --timeout 30 -C Debug -j4
+      run: ctest -C Debug -j4

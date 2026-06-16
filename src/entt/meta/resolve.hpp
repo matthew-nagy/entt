@@ -19,8 +19,8 @@ namespace entt {
  */
 template<typename Type>
 [[nodiscard]] meta_type resolve(const meta_ctx &ctx) noexcept {
-    auto &&context = internal::meta_context::from(ctx);
-    return {ctx, internal::resolve<std::remove_cv_t<std::remove_reference_t<Type>>>(context)};
+    const auto &context = internal::meta_context::from(ctx);
+    return {ctx, internal::resolve<std::remove_cvref_t<Type>>(context)};
 }
 
 /**
@@ -38,16 +38,16 @@ template<typename Type>
  * @param ctx The context from which to search for meta types.
  * @return An iterable range to use to visit all meta types.
  */
-[[nodiscard]] inline meta_range<meta_type, typename decltype(internal::meta_context::value)::const_iterator> resolve(const meta_ctx &ctx) noexcept {
-    auto &&context = internal::meta_context::from(ctx);
-    return {{ctx, context.value.cbegin()}, {ctx, context.value.cend()}};
+[[nodiscard]] inline meta_range<meta_type, typename internal::meta_context::container_type::const_iterator> resolve(const meta_ctx &ctx) noexcept {
+    const auto &context = internal::meta_context::from(ctx);
+    return {{ctx, context.bucket.cbegin()}, {ctx, context.bucket.cend()}};
 }
 
 /**
  * @brief Returns a range to use to visit all meta types.
  * @return An iterable range to use to visit all meta types.
  */
-[[nodiscard]] inline meta_range<meta_type, typename decltype(internal::meta_context::value)::const_iterator> resolve() noexcept {
+[[nodiscard]] inline meta_range<meta_type, typename internal::meta_context::container_type::const_iterator> resolve() noexcept {
     return resolve(locator<meta_ctx>::value_or());
 }
 
@@ -83,9 +83,9 @@ template<typename Type>
  * @return The meta type associated with the given type info object, if any.
  */
 [[nodiscard]] inline meta_type resolve(const meta_ctx &ctx, const type_info &info) noexcept {
-    auto &&context = internal::meta_context::from(ctx);
+    const auto &context = internal::meta_context::from(ctx);
     const auto *elem = internal::try_resolve(context, info);
-    return elem ? meta_type{ctx, *elem} : meta_type{};
+    return (elem != nullptr) ? meta_type{ctx, *elem} : meta_type{};
 }
 
 /**

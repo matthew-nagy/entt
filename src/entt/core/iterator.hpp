@@ -1,10 +1,12 @@
 #ifndef ENTT_CORE_ITERATOR_HPP
 #define ENTT_CORE_ITERATOR_HPP
 
+#include <concepts>
 #include <iterator>
 #include <memory>
 #include <type_traits>
 #include <utility>
+#include "../stl/iterator.hpp"
 
 namespace entt {
 
@@ -52,11 +54,8 @@ private:
  * @brief Plain iota iterator (waiting for C++20).
  * @tparam Type Value type.
  */
-template<typename Type>
-class iota_iterator final {
-    static_assert(std::is_integral_v<Type>, "Not an integral type");
-
-public:
+template<std::integral Type>
+struct iota_iterator final {
     /*! @brief Value type, likely an integral one. */
     using value_type = Type;
     /*! @brief Invalid pointer type. */
@@ -92,7 +91,7 @@ public:
      * @return This iota iterator.
      */
     constexpr iota_iterator operator++(int) noexcept {
-        iota_iterator orig = *this;
+        const iota_iterator orig = *this;
         return ++(*this), orig;
     }
 
@@ -104,50 +103,35 @@ public:
         return current;
     }
 
+    /**
+     * @brief Comparison operator.
+     * @param other A properly initialized iota iterator.
+     * @return True if the two iterators are identical, false otherwise.
+     */
+    [[nodiscard]] constexpr bool operator==(const iota_iterator &other) const noexcept {
+        return current == other.current;
+    }
+
 private:
     value_type current;
 };
-
-/**
- * @brief Comparison operator.
- * @tparam Type Value type of the iota iterator.
- * @param lhs A properly initialized iota iterator.
- * @param rhs A properly initialized iota iterator.
- * @return True if the two iterators are identical, false otherwise.
- */
-template<typename Type>
-[[nodiscard]] constexpr bool operator==(const iota_iterator<Type> &lhs, const iota_iterator<Type> &rhs) noexcept {
-    return *lhs == *rhs;
-}
-
-/**
- * @brief Comparison operator.
- * @tparam Type Value type of the iota iterator.
- * @param lhs A properly initialized iota iterator.
- * @param rhs A properly initialized iota iterator.
- * @return True if the two iterators differ, false otherwise.
- */
-template<typename Type>
-[[nodiscard]] constexpr bool operator!=(const iota_iterator<Type> &lhs, const iota_iterator<Type> &rhs) noexcept {
-    return !(lhs == rhs);
-}
 
 /**
  * @brief Utility class to create an iterable object from a pair of iterators.
  * @tparam It Type of iterator.
  * @tparam Sentinel Type of sentinel.
  */
-template<typename It, typename Sentinel = It>
+template<stl::input_or_output_iterator It, stl::sentinel_for<It> Sentinel = It>
 struct iterable_adaptor final {
     /*! @brief Value type. */
-    using value_type = typename std::iterator_traits<It>::value_type;
+    using value_type = std::iterator_traits<It>::value_type;
     /*! @brief Iterator type. */
     using iterator = It;
     /*! @brief Sentinel type. */
     using sentinel = Sentinel;
 
     /*! @brief Default constructor. */
-    constexpr iterable_adaptor() noexcept(std::is_nothrow_default_constructible_v<iterator> &&std::is_nothrow_default_constructible_v<sentinel>)
+    constexpr iterable_adaptor() noexcept(std::is_nothrow_default_constructible_v<iterator> && std::is_nothrow_default_constructible_v<sentinel>)
         : first{},
           last{} {}
 
@@ -156,7 +140,7 @@ struct iterable_adaptor final {
      * @param from Begin iterator.
      * @param to End iterator.
      */
-    constexpr iterable_adaptor(iterator from, sentinel to) noexcept(std::is_nothrow_move_constructible_v<iterator> &&std::is_nothrow_move_constructible_v<sentinel>)
+    constexpr iterable_adaptor(iterator from, sentinel to) noexcept(std::is_nothrow_move_constructible_v<iterator> && std::is_nothrow_move_constructible_v<sentinel>)
         : first{std::move(from)},
           last{std::move(to)} {}
 

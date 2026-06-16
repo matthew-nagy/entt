@@ -1,3 +1,4 @@
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -5,32 +6,39 @@
 #include <entt/core/type_info.hpp>
 #include <entt/core/type_traits.hpp>
 #include <entt/poly/poly.hpp>
-#include "../common/config.h"
+#include "../../common/config.h"
+#include "../../common/linter.hpp"
 
 template<typename Base>
 struct common_type: Base {
     void incr() {
-        entt::poly_call<0>(*this);
+        constexpr auto member_index = 0u;
+        entt::poly_call<member_index>(*this);
     }
 
-    void set(int v) {
-        entt::poly_call<1>(*this, v);
+    void set(int iv) {
+        constexpr auto member_index = 1u;
+        entt::poly_call<member_index>(*this, iv);
     }
 
-    int get() const {
-        return static_cast<int>(entt::poly_call<2>(*this));
+    [[nodiscard]] int get() const {
+        constexpr auto member_index = 2u;
+        return static_cast<int>(entt::poly_call<member_index>(*this));
     }
 
     void decr() {
-        entt::poly_call<3>(*this);
+        constexpr auto member_index = 3u;
+        entt::poly_call<member_index>(*this);
     }
 
-    int mul(int v) const {
-        return static_cast<int>(entt::poly_call<4>(*this, v));
+    [[nodiscard]] int mul(int iv) const {
+        constexpr auto member_index = 4u;
+        return static_cast<int>(entt::poly_call<member_index>(*this, iv));
     }
 
-    int rand() const {
-        return static_cast<int>(entt::poly_call<5>(*this));
+    [[nodiscard]] int rand() const {
+        constexpr auto member_index = 5u;
+        return static_cast<int>(entt::poly_call<member_index>(*this));
     }
 };
 
@@ -40,14 +48,25 @@ struct common_members {
         self.set(self.get() - 1);
     }
 
-    static double mul(const Type &self, double v) {
-        return v * self.get();
+    [[nodiscard]] static double mul(const Type &self, double dv) {
+        return dv * self.get();
     }
 };
 
-static int absolutely_random() {
-    return 42;
+namespace {
+
+template<typename... Type>
+entt::type_list<Type...> as_type_list(const entt::type_list<Type...> &);
+
+[[nodiscard]] int absolutely_random() {
+    return 4;
 }
+
+[[nodiscard]] int three_is_a_magic_number() {
+    return 3;
+}
+
+} // namespace
 
 template<typename Type>
 using common_impl = entt::value_list<
@@ -92,7 +111,7 @@ struct DeducedEmbedded
     : entt::type_list<> {
     template<typename Base>
     struct type: Base {
-        int get() const {
+        [[nodiscard]] int get() const {
             return entt::poly_call<0>(*this);
         }
     };
@@ -106,7 +125,7 @@ struct DefinedEmbedded
     template<typename Base>
     struct type: Base {
         // non-const get on purpose
-        int get() {
+        [[nodiscard]] int get() {
             return entt::poly_call<0>(*this);
         }
     };
@@ -115,21 +134,53 @@ struct DefinedEmbedded
     using impl = entt::value_list<&Type::get>;
 };
 
+struct DeducedDerived
+    : entt::type_list<> {
+    template<typename Base>
+    struct type: Deduced::type<Base> {
+        static constexpr auto base = Deduced::impl<Deduced::type<entt::poly_inspector>>::size;
+
+        int three_is_a_magic_number() {
+            return entt::poly_call<base + 0>(*this);
+        }
+    };
+
+    template<typename Type>
+    using impl = entt::value_list_cat_t<Deduced::impl<Type>, entt::value_list<&three_is_a_magic_number>>;
+};
+
+struct DefinedDerived
+    : entt::type_list_cat_t<
+          decltype(as_type_list(std::declval<Defined>())),
+          entt::type_list<int()>> {
+    template<typename Base>
+    struct type: Defined::type<Base> {
+        static constexpr auto base = Defined::impl<Defined::type<entt::poly_inspector>>::size;
+
+        int three_is_a_magic_number() {
+            return entt::poly_call<base + 0>(*this);
+        }
+    };
+
+    template<typename Type>
+    using impl = entt::value_list_cat_t<Defined::impl<Type>, entt::value_list<&three_is_a_magic_number>>;
+};
+
 struct impl {
     impl() = default;
 
-    impl(int v)
-        : value{v} {}
+    impl(int iv)
+        : value{iv} {}
 
     void incr() {
         ++value;
     }
 
-    void set(int v) {
-        value = v;
+    void set(int iv) {
+        value = iv;
     }
 
-    int get() const {
+    [[nodiscard]] int get() const {
         return value;
     }
 
@@ -161,8 +212,17 @@ using PolyEmbeddedTypes = ::testing::Types<DeducedEmbedded, DefinedEmbedded>;
 
 TYPED_TEST_SUITE(PolyEmbedded, PolyEmbeddedTypes, );
 
+template<typename Type>
+struct PolyDerived: testing::Test {
+    using type = entt::basic_poly<Type>;
+};
+
+using PolyDerivedTypes = ::testing::Types<DeducedDerived, DefinedDerived>;
+
+TYPED_TEST_SUITE(PolyDerived, PolyDerivedTypes, );
+
 TYPED_TEST(Poly, Functionalities) {
-    using poly_type = typename TestFixture::template type<>;
+    using poly_type = TestFixture::template type<>;
 
     impl instance{};
 
@@ -176,22 +236,22 @@ TYPED_TEST(Poly, Functionalities) {
     ASSERT_TRUE(alias);
     ASSERT_TRUE(value);
 
-    ASSERT_EQ(empty.type(), entt::type_id<void>());
-    ASSERT_EQ(in_place.type(), entt::type_id<impl>());
-    ASSERT_EQ(alias.type(), entt::type_id<impl>());
-    ASSERT_EQ(value.type(), entt::type_id<impl>());
+    ASSERT_EQ(empty.info(), entt::type_id<void>());
+    ASSERT_EQ(in_place.info(), entt::type_id<impl>());
+    ASSERT_EQ(alias.info(), entt::type_id<impl>());
+    ASSERT_EQ(value.info(), entt::type_id<impl>());
 
     ASSERT_EQ(alias.data(), &instance);
     ASSERT_EQ(std::as_const(alias).data(), &instance);
 
-    ASSERT_EQ(value->rand(), 42);
+    ASSERT_EQ(value->rand(), absolutely_random());
 
     empty = impl{};
 
     ASSERT_TRUE(empty);
     ASSERT_NE(empty.data(), nullptr);
     ASSERT_NE(std::as_const(empty).data(), nullptr);
-    ASSERT_EQ(empty.type(), entt::type_id<impl>());
+    ASSERT_EQ(empty.info(), entt::type_id<impl>());
     ASSERT_EQ(empty->get(), 0);
 
     empty.template emplace<impl>(3);
@@ -205,7 +265,7 @@ TYPED_TEST(Poly, Functionalities) {
     ASSERT_NE(ref.data(), nullptr);
     ASSERT_EQ(ref.data(), in_place.data());
     ASSERT_EQ(std::as_const(ref).data(), std::as_const(in_place).data());
-    ASSERT_EQ(ref.type(), entt::type_id<impl>());
+    ASSERT_EQ(ref.info(), entt::type_id<impl>());
     ASSERT_EQ(ref->get(), 3);
 
     poly_type null{};
@@ -219,6 +279,7 @@ TYPED_TEST(Poly, Functionalities) {
     ASSERT_EQ(copy->get(), 3);
 
     poly_type move = std::move(copy);
+    test::is_initialized(copy);
 
     ASSERT_TRUE(move);
     ASSERT_TRUE(copy);
@@ -227,27 +288,11 @@ TYPED_TEST(Poly, Functionalities) {
     move.reset();
 
     ASSERT_FALSE(move);
-    ASSERT_EQ(move.type(), entt::type_id<void>());
-}
-
-TYPED_TEST(PolyEmbedded, EmbeddedVtable) {
-    using poly_type = typename TestFixture::type;
-
-    poly_type poly{impl{}};
-    auto *ptr = static_cast<impl *>(poly.data());
-
-    ASSERT_TRUE(poly);
-    ASSERT_NE(poly.data(), nullptr);
-    ASSERT_NE(std::as_const(poly).data(), nullptr);
-    ASSERT_EQ(poly->get(), 0);
-
-    ptr->value = 2;
-
-    ASSERT_EQ(poly->get(), 2);
+    ASSERT_EQ(move.info(), entt::type_id<void>());
 }
 
 TYPED_TEST(Poly, Owned) {
-    using poly_type = typename TestFixture::template type<>;
+    using poly_type = TestFixture::template type<>;
 
     poly_type poly{impl{}};
     auto *ptr = static_cast<impl *>(poly.data());
@@ -273,7 +318,7 @@ TYPED_TEST(Poly, Owned) {
 }
 
 TYPED_TEST(Poly, Reference) {
-    using poly_type = typename TestFixture::template type<>;
+    using poly_type = TestFixture::template type<>;
 
     impl instance{};
     poly_type poly{std::in_place_type<impl &>, instance};
@@ -298,8 +343,8 @@ TYPED_TEST(Poly, Reference) {
     ASSERT_EQ(poly->mul(3), 3);
 }
 
-ENTT_DEBUG_TYPED_TEST(Poly, ConstReference) {
-    using poly_type = typename TestFixture::template type<>;
+TYPED_TEST(Poly, ConstReference) {
+    using poly_type = TestFixture::template type<>;
 
     impl instance{};
     poly_type poly{std::in_place_type<const impl &>, instance};
@@ -319,8 +364,8 @@ ENTT_DEBUG_TYPED_TEST(Poly, ConstReference) {
     ASSERT_EQ(poly->mul(3), 0);
 }
 
-TYPED_TEST(PolyDeathTest, ConstReference) {
-    using poly_type = typename TestFixture::template type<>;
+ENTT_DEBUG_TYPED_TEST(PolyDeathTest, ConstReference) {
+    using poly_type = TestFixture::template type<>;
 
     impl instance{};
     poly_type poly{std::in_place_type<const impl &>, instance};
@@ -330,7 +375,7 @@ TYPED_TEST(PolyDeathTest, ConstReference) {
 }
 
 TYPED_TEST(Poly, AsRef) {
-    using poly_type = typename TestFixture::template type<>;
+    using poly_type = TestFixture::template type<>;
 
     poly_type poly{impl{}};
     auto ref = poly.as_ref();
@@ -363,8 +408,8 @@ TYPED_TEST(Poly, AsRef) {
 }
 
 TYPED_TEST(Poly, SBOVsZeroedSBOSize) {
-    using poly_type = typename TestFixture::template type<>;
-    using zeroed_type = typename TestFixture::template type<0u>;
+    using poly_type = TestFixture::template type<>;
+    using zeroed_type = TestFixture::template type<0u>;
 
     poly_type poly{impl{}};
     const auto broken = poly.data();
@@ -386,7 +431,9 @@ TYPED_TEST(Poly, SBOVsZeroedSBOSize) {
 
 TYPED_TEST(Poly, SboAlignment) {
     constexpr auto alignment = alignof(over_aligned);
-    typename TestFixture::template type<alignment, alignment> sbo[2]{over_aligned{}, over_aligned{}};
+    using poly_type = TestFixture::template type<alignment, alignment>;
+
+    std::array<poly_type, 2u> sbo = {over_aligned{}, over_aligned{}};
     const auto *data = sbo[0].data();
 
     ASSERT_TRUE((reinterpret_cast<std::uintptr_t>(sbo[0u].data()) % alignment) == 0u);
@@ -402,7 +449,9 @@ TYPED_TEST(Poly, SboAlignment) {
 
 TYPED_TEST(Poly, NoSboAlignment) {
     constexpr auto alignment = alignof(over_aligned);
-    typename TestFixture::template type<alignment> nosbo[2]{over_aligned{}, over_aligned{}};
+    using poly_type = TestFixture::template type<alignment>;
+
+    std::array<poly_type, 2u> nosbo = {over_aligned{}, over_aligned{}};
     const auto *data = nosbo[0].data();
 
     ASSERT_TRUE((reinterpret_cast<std::uintptr_t>(nosbo[0u].data()) % alignment) == 0u);
@@ -414,4 +463,28 @@ TYPED_TEST(Poly, NoSboAlignment) {
     ASSERT_TRUE((reinterpret_cast<std::uintptr_t>(nosbo[1u].data()) % alignment) == 0u);
 
     ASSERT_EQ(data, nosbo[1].data());
+}
+
+TYPED_TEST(PolyEmbedded, EmbeddedVtable) {
+    using poly_type = TestFixture::type;
+
+    poly_type poly{impl{}};
+    auto *ptr = static_cast<impl *>(poly.data());
+
+    ASSERT_TRUE(poly);
+    ASSERT_NE(poly.data(), nullptr);
+    ASSERT_NE(std::as_const(poly).data(), nullptr);
+    ASSERT_EQ(poly->get(), 0);
+
+    ptr->value = 2;
+
+    ASSERT_EQ(poly->get(), 2);
+}
+
+TYPED_TEST(PolyDerived, InheritanceSupport) {
+    using poly_type = TestFixture::type;
+
+    poly_type poly{impl{}};
+
+    ASSERT_EQ(poly->three_is_a_magic_number(), three_is_a_magic_number());
 }

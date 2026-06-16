@@ -1,30 +1,42 @@
+#include <array>
 #include <cstddef>
+#include <utility>
+#include <vector>
 #include <gtest/gtest.h>
+#include <entt/core/type_info.hpp>
+#include <entt/entity/group.hpp>
+#include <entt/entity/mixin.hpp>
 #include <entt/entity/organizer.hpp>
 #include <entt/entity/registry.hpp>
+#include <entt/entity/view.hpp>
 
-void ro_int_rw_char_double(entt::view<entt::get_t<const int, char>>, double &) {}
-void ro_char_rw_int(entt::view<entt::get_t<int, const char>>) {}
-void ro_char_rw_double(entt::view<entt::get_t<const char>>, double &) {}
-void ro_int_double(entt::view<entt::get_t<const int>>, const double &) {}
-void sync_point(entt::registry &, entt::view<entt::get_t<const int>>) {}
+struct Organizer: testing::Test {
+    static void ro_int_rw_char_double(entt::view<entt::get_t<const int, char>>, double &) {}
+    static void ro_char_rw_int(entt::group<entt::owned_t<int>, entt::get_t<const char>>) {}
+    static void ro_char_rw_double(entt::view<entt::get_t<const char>>, double &) {}
+    static void ro_int_double(entt::view<entt::get_t<const int>>, const double &) {}
+    static void sync_point(entt::registry &, entt::view<entt::get_t<const int>>) {}
 
-struct clazz {
-    void ro_int_char_double(entt::view<entt::get_t<const int, const char>>, const double &) {}
-    void rw_int(entt::view<entt::get_t<int>>) {}
-    void rw_int_char(entt::view<entt::get_t<int, char>>) {}
-    void rw_int_char_double(entt::view<entt::get_t<int, char>>, double &) {}
+    struct clazz {
+        void ro_int_char_double(entt::view<entt::get_t<const int, const char>>, const double &) {}
+        void rw_int(entt::view<entt::get_t<int>>) {}
+        void rw_int_char(entt::view<entt::get_t<int, char>>) {}
+        void rw_int_char_double(entt::view<entt::get_t<int, char>>, double &) {}
 
-    static void ro_int_with_payload(const clazz &, entt::view<entt::get_t<const int>>) {}
-    static void ro_char_with_payload(const clazz &, entt::view<entt::get_t<const char>>) {}
-    static void ro_int_char_with_payload(clazz &, entt::view<entt::get_t<const int, const char>>) {}
+        static void ro_int_with_payload(const clazz &, entt::view<entt::get_t<const int>>) {}
+        static void ro_char_with_payload(const clazz &, entt::group<entt::owned_t<const char>>) {}
+        static void ro_int_char_with_payload(clazz &, entt::view<entt::get_t<const int, const char>>) {}
+
+        static void const_registry_first(const entt::registry &, entt::view<entt::get_t<int>>) {}
+        static void const_registry_second(const entt::registry &, entt::view<entt::get_t<double>>) {}
+    };
+
+    static void to_args_integrity(entt::view<entt::get_t<int>> view, std::size_t &value, entt::registry &) {
+        value = view.size();
+    }
 };
 
-void to_args_integrity(entt::view<entt::get_t<int>> view, std::size_t &value, entt::registry &) {
-    value = view.size();
-}
-
-TEST(Organizer, EmplaceFreeFunction) {
+TEST_F(Organizer, EmplaceFreeFunction) {
     entt::organizer organizer;
     entt::registry registry;
 
@@ -61,18 +73,29 @@ TEST(Organizer, EmplaceFreeFunction) {
     ASSERT_FALSE(graph[2u].top_level());
     ASSERT_FALSE(graph[3u].top_level());
 
-    ASSERT_EQ(graph[0u].children().size(), 2u);
-    ASSERT_EQ(graph[1u].children().size(), 1u);
-    ASSERT_EQ(graph[2u].children().size(), 1u);
-    ASSERT_EQ(graph[3u].children().size(), 0u);
+    ASSERT_EQ(graph[0u].in_edges().size(), 0u);
+    ASSERT_EQ(graph[1u].in_edges().size(), 1u);
+    ASSERT_EQ(graph[2u].in_edges().size(), 1u);
+    ASSERT_EQ(graph[3u].in_edges().size(), 2u);
 
-    ASSERT_EQ(graph[0u].children()[0u], 1u);
-    ASSERT_EQ(graph[0u].children()[1u], 2u);
-    ASSERT_EQ(graph[1u].children()[0u], 3u);
-    ASSERT_EQ(graph[2u].children()[0u], 3u);
+    ASSERT_EQ(graph[1u].in_edges()[0u], 0u);
+    ASSERT_EQ(graph[2u].in_edges()[0u], 0u);
+    ASSERT_EQ(graph[3u].in_edges()[0u], 1u);
+    ASSERT_EQ(graph[3u].in_edges()[1u], 2u);
+
+    ASSERT_EQ(graph[0u].out_edges().size(), 2u);
+    ASSERT_EQ(graph[1u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[2u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[3u].out_edges().size(), 0u);
+
+    ASSERT_EQ(graph[0u].out_edges()[0u], 1u);
+    ASSERT_EQ(graph[0u].out_edges()[1u], 2u);
+    ASSERT_EQ(graph[1u].out_edges()[0u], 3u);
+    ASSERT_EQ(graph[2u].out_edges()[0u], 3u);
 
     for(auto &&vertex: graph) {
-        ASSERT_NO_FATAL_FAILURE(vertex.callback()(vertex.data(), registry));
+        entt::organizer::function_type *cb = vertex.callback();
+        ASSERT_NO_THROW(cb(vertex.data(), registry));
     }
 
     organizer.clear();
@@ -80,7 +103,7 @@ TEST(Organizer, EmplaceFreeFunction) {
     ASSERT_EQ(organizer.graph().size(), 0u);
 }
 
-TEST(Organizer, EmplaceMemberFunction) {
+TEST_F(Organizer, EmplaceMemberFunction) {
     entt::organizer organizer;
     entt::registry registry;
     clazz instance;
@@ -118,17 +141,27 @@ TEST(Organizer, EmplaceMemberFunction) {
     ASSERT_FALSE(graph[2u].top_level());
     ASSERT_FALSE(graph[3u].top_level());
 
-    ASSERT_EQ(graph[0u].children().size(), 1u);
-    ASSERT_EQ(graph[1u].children().size(), 1u);
-    ASSERT_EQ(graph[2u].children().size(), 1u);
-    ASSERT_EQ(graph[3u].children().size(), 0u);
+    ASSERT_EQ(graph[0u].in_edges().size(), 0u);
+    ASSERT_EQ(graph[1u].in_edges().size(), 1u);
+    ASSERT_EQ(graph[2u].in_edges().size(), 1u);
+    ASSERT_EQ(graph[3u].in_edges().size(), 1u);
 
-    ASSERT_EQ(graph[0u].children()[0u], 1u);
-    ASSERT_EQ(graph[1u].children()[0u], 2u);
-    ASSERT_EQ(graph[2u].children()[0u], 3u);
+    ASSERT_EQ(graph[1u].in_edges()[0u], 0u);
+    ASSERT_EQ(graph[2u].in_edges()[0u], 1u);
+    ASSERT_EQ(graph[3u].in_edges()[0u], 2u);
+
+    ASSERT_EQ(graph[0u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[1u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[2u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[3u].out_edges().size(), 0u);
+
+    ASSERT_EQ(graph[0u].out_edges()[0u], 1u);
+    ASSERT_EQ(graph[1u].out_edges()[0u], 2u);
+    ASSERT_EQ(graph[2u].out_edges()[0u], 3u);
 
     for(auto &&vertex: graph) {
-        ASSERT_NO_FATAL_FAILURE(vertex.callback()(vertex.data(), registry));
+        entt::organizer::function_type *cb = vertex.callback();
+        ASSERT_NO_THROW(cb(vertex.data(), registry));
     }
 
     organizer.clear();
@@ -136,7 +169,7 @@ TEST(Organizer, EmplaceMemberFunction) {
     ASSERT_EQ(organizer.graph().size(), 0u);
 }
 
-TEST(Organizer, EmplaceFreeFunctionWithPayload) {
+TEST_F(Organizer, EmplaceFreeFunctionWithPayload) {
     entt::organizer organizer;
     entt::registry registry;
     clazz instance;
@@ -180,19 +213,28 @@ TEST(Organizer, EmplaceFreeFunctionWithPayload) {
     ASSERT_FALSE(graph[3u].top_level());
     ASSERT_FALSE(graph[4u].top_level());
 
-    ASSERT_EQ(graph[0u].children().size(), 1u);
-    ASSERT_EQ(graph[1u].children().size(), 1u);
-    ASSERT_EQ(graph[2u].children().size(), 1u);
-    ASSERT_EQ(graph[3u].children().size(), 1u);
-    ASSERT_EQ(graph[4u].children().size(), 0u);
+    ASSERT_EQ(graph[3u].in_edges().size(), 1u);
+    ASSERT_EQ(graph[4u].in_edges().size(), 3u);
 
-    ASSERT_EQ(graph[0u].children()[0u], 4u);
-    ASSERT_EQ(graph[1u].children()[0u], 4u);
-    ASSERT_EQ(graph[2u].children()[0u], 3u);
-    ASSERT_EQ(graph[3u].children()[0u], 4u);
+    ASSERT_EQ(graph[3u].in_edges()[0u], 2u);
+    ASSERT_EQ(graph[4u].in_edges()[0u], 0u);
+    ASSERT_EQ(graph[4u].in_edges()[1u], 1u);
+    ASSERT_EQ(graph[4u].in_edges()[2u], 3u);
+
+    ASSERT_EQ(graph[0u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[1u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[2u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[3u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[4u].out_edges().size(), 0u);
+
+    ASSERT_EQ(graph[0u].out_edges()[0u], 4u);
+    ASSERT_EQ(graph[1u].out_edges()[0u], 4u);
+    ASSERT_EQ(graph[2u].out_edges()[0u], 3u);
+    ASSERT_EQ(graph[3u].out_edges()[0u], 4u);
 
     for(auto &&vertex: graph) {
-        ASSERT_NO_FATAL_FAILURE(vertex.callback()(vertex.data(), registry));
+        entt::organizer::function_type *cb = vertex.callback();
+        ASSERT_NO_THROW(cb(vertex.data(), registry));
     }
 
     organizer.clear();
@@ -200,7 +242,7 @@ TEST(Organizer, EmplaceFreeFunctionWithPayload) {
     ASSERT_EQ(organizer.graph().size(), 0u);
 }
 
-TEST(Organizer, EmplaceDirectFunction) {
+TEST_F(Organizer, EmplaceDirectFunction) {
     entt::organizer organizer;
     entt::registry registry;
     clazz instance;
@@ -255,17 +297,26 @@ TEST(Organizer, EmplaceDirectFunction) {
     ASSERT_FALSE(graph[2u].top_level());
     ASSERT_FALSE(graph[3u].top_level());
 
-    ASSERT_EQ(graph[0u].children().size(), 1u);
-    ASSERT_EQ(graph[1u].children().size(), 1u);
-    ASSERT_EQ(graph[2u].children().size(), 1u);
-    ASSERT_EQ(graph[3u].children().size(), 0u);
+    ASSERT_EQ(graph[1u].in_edges().size(), 1u);
+    ASSERT_EQ(graph[2u].in_edges().size(), 1u);
+    ASSERT_EQ(graph[3u].in_edges().size(), 1u);
 
-    ASSERT_EQ(graph[0u].children()[0u], 1u);
-    ASSERT_EQ(graph[1u].children()[0u], 2u);
-    ASSERT_EQ(graph[2u].children()[0u], 3u);
+    ASSERT_EQ(graph[1u].in_edges()[0u], 0u);
+    ASSERT_EQ(graph[2u].in_edges()[0u], 1u);
+    ASSERT_EQ(graph[3u].in_edges()[0u], 2u);
+
+    ASSERT_EQ(graph[0u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[1u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[2u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[3u].out_edges().size(), 0u);
+
+    ASSERT_EQ(graph[0u].out_edges()[0u], 1u);
+    ASSERT_EQ(graph[1u].out_edges()[0u], 2u);
+    ASSERT_EQ(graph[2u].out_edges()[0u], 3u);
 
     for(auto &&vertex: graph) {
-        ASSERT_NO_FATAL_FAILURE(vertex.callback()(vertex.data(), registry));
+        entt::organizer::function_type *cb = vertex.callback();
+        ASSERT_NO_THROW(cb(vertex.data(), registry));
     }
 
     organizer.clear();
@@ -273,7 +324,7 @@ TEST(Organizer, EmplaceDirectFunction) {
     ASSERT_EQ(organizer.graph().size(), 0u);
 }
 
-TEST(Organizer, SyncPoint) {
+TEST_F(Organizer, SyncPoint) {
     entt::organizer organizer;
     entt::registry registry;
     clazz instance;
@@ -303,26 +354,69 @@ TEST(Organizer, SyncPoint) {
     ASSERT_FALSE(graph[4u].top_level());
     ASSERT_FALSE(graph[5u].top_level());
 
-    ASSERT_EQ(graph[0u].children().size(), 1u);
-    ASSERT_EQ(graph[1u].children().size(), 2u);
-    ASSERT_EQ(graph[2u].children().size(), 1u);
-    ASSERT_EQ(graph[3u].children().size(), 1u);
-    ASSERT_EQ(graph[4u].children().size(), 1u);
-    ASSERT_EQ(graph[5u].children().size(), 0u);
+    ASSERT_EQ(graph[1u].in_edges().size(), 1u);
+    ASSERT_EQ(graph[2u].in_edges().size(), 1u);
+    ASSERT_EQ(graph[3u].in_edges().size(), 1u);
+    ASSERT_EQ(graph[4u].in_edges().size(), 2u);
+    ASSERT_EQ(graph[5u].in_edges().size(), 1u);
 
-    ASSERT_EQ(graph[0u].children()[0u], 1u);
-    ASSERT_EQ(graph[1u].children()[0u], 2u);
-    ASSERT_EQ(graph[1u].children()[1u], 3u);
-    ASSERT_EQ(graph[2u].children()[0u], 4u);
-    ASSERT_EQ(graph[3u].children()[0u], 4u);
-    ASSERT_EQ(graph[4u].children()[0u], 5u);
+    ASSERT_EQ(graph[1u].in_edges()[0u], 0u);
+    ASSERT_EQ(graph[2u].in_edges()[0u], 1u);
+    ASSERT_EQ(graph[3u].in_edges()[0u], 1u);
+    ASSERT_EQ(graph[4u].in_edges()[0u], 2u);
+    ASSERT_EQ(graph[4u].in_edges()[1u], 3u);
+    ASSERT_EQ(graph[5u].in_edges()[0u], 4u);
+
+    ASSERT_EQ(graph[0u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[1u].out_edges().size(), 2u);
+    ASSERT_EQ(graph[2u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[3u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[4u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[5u].out_edges().size(), 0u);
+
+    ASSERT_EQ(graph[0u].out_edges()[0u], 1u);
+    ASSERT_EQ(graph[1u].out_edges()[0u], 2u);
+    ASSERT_EQ(graph[1u].out_edges()[1u], 3u);
+    ASSERT_EQ(graph[2u].out_edges()[0u], 4u);
+    ASSERT_EQ(graph[3u].out_edges()[0u], 4u);
+    ASSERT_EQ(graph[4u].out_edges()[0u], 5u);
 
     for(auto &&vertex: graph) {
-        ASSERT_NO_FATAL_FAILURE(vertex.callback()(vertex.data(), registry));
+        entt::organizer::function_type *cb = vertex.callback();
+        ASSERT_NO_THROW(cb(vertex.data(), registry));
     }
 }
 
-TEST(Organizer, Override) {
+TEST_F(Organizer, ConstRegistry) {
+    entt::organizer organizer;
+    entt::registry registry;
+
+    organizer.emplace<&clazz::const_registry_first>("first");
+    organizer.emplace<&clazz::const_registry_second>("second");
+
+    const auto graph = organizer.graph();
+
+    ASSERT_EQ(graph.size(), 2u);
+
+    ASSERT_STREQ(graph[0u].name(), "first");
+    ASSERT_STREQ(graph[1u].name(), "second");
+
+    ASSERT_TRUE(graph[0u].top_level());
+    ASSERT_TRUE(graph[1u].top_level());
+
+    ASSERT_EQ(graph[0u].in_edges().size(), 0u);
+    ASSERT_EQ(graph[1u].in_edges().size(), 0u);
+
+    ASSERT_EQ(graph[0u].out_edges().size(), 0u);
+    ASSERT_EQ(graph[1u].out_edges().size(), 0u);
+
+    for(auto &&vertex: graph) {
+        entt::organizer::function_type *cb = vertex.callback();
+        ASSERT_NO_THROW(cb(vertex.data(), registry));
+    }
+}
+
+TEST_F(Organizer, Override) {
     entt::organizer organizer;
 
     organizer.emplace<&ro_int_rw_char_double, const char, const double>("t1");
@@ -341,15 +435,20 @@ TEST(Organizer, Override) {
     ASSERT_TRUE(graph[1u].top_level());
     ASSERT_FALSE(graph[2u].top_level());
 
-    ASSERT_EQ(graph[0u].children().size(), 1u);
-    ASSERT_EQ(graph[1u].children().size(), 1u);
-    ASSERT_EQ(graph[2u].children().size(), 0u);
+    ASSERT_EQ(graph[2u].in_edges().size(), 2u);
 
-    ASSERT_EQ(graph[0u].children()[0u], 2u);
-    ASSERT_EQ(graph[1u].children()[0u], 2u);
+    ASSERT_EQ(graph[2u].in_edges()[0u], 0u);
+    ASSERT_EQ(graph[2u].in_edges()[1u], 1u);
+
+    ASSERT_EQ(graph[0u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[1u].out_edges().size(), 1u);
+    ASSERT_EQ(graph[2u].out_edges().size(), 0u);
+
+    ASSERT_EQ(graph[0u].out_edges()[0u], 2u);
+    ASSERT_EQ(graph[1u].out_edges()[0u], 2u);
 }
 
-TEST(Organizer, Prepare) {
+TEST_F(Organizer, Prepare) {
     entt::organizer organizer;
     entt::registry registry;
     clazz instance;
@@ -363,6 +462,10 @@ TEST(Organizer, Prepare) {
     ASSERT_FALSE(registry.ctx().contains<char>());
     ASSERT_FALSE(registry.ctx().contains<double>());
 
+    ASSERT_EQ(std::as_const(registry).storage<int>(), nullptr);
+    ASSERT_EQ(std::as_const(registry).storage<char>(), nullptr);
+    ASSERT_EQ(std::as_const(registry).storage<double>(), nullptr);
+
     for(auto &&vertex: graph) {
         vertex.prepare(registry);
     }
@@ -370,9 +473,13 @@ TEST(Organizer, Prepare) {
     ASSERT_FALSE(registry.ctx().contains<int>());
     ASSERT_FALSE(registry.ctx().contains<char>());
     ASSERT_TRUE(registry.ctx().contains<double>());
+
+    ASSERT_NE(std::as_const(registry).storage<int>(), nullptr);
+    ASSERT_NE(std::as_const(registry).storage<char>(), nullptr);
+    ASSERT_EQ(std::as_const(registry).storage<double>(), nullptr);
 }
 
-TEST(Organizer, Dependencies) {
+TEST_F(Organizer, Dependencies) {
     entt::organizer organizer;
     clazz instance;
 
@@ -381,49 +488,50 @@ TEST(Organizer, Dependencies) {
     organizer.emplace<char, const double>(+[](const void *, entt::registry &) {});
 
     const auto graph = organizer.graph();
-    const entt::type_info *buffer[5u]{};
+    constexpr auto number_of_elements = 5u;
+    std::array<const entt::type_info *, number_of_elements> buffer{};
 
     ASSERT_EQ(graph.size(), 3u);
 
     ASSERT_EQ(graph[0u].ro_count(), 2u);
     ASSERT_EQ(graph[0u].rw_count(), 0u);
 
-    ASSERT_EQ(graph[0u].ro_dependency(buffer, 0u), 0u);
-    ASSERT_EQ(graph[0u].rw_dependency(buffer, 2u), 0u);
+    ASSERT_EQ(graph[0u].ro_dependency(buffer.data(), 0u), 0u);
+    ASSERT_EQ(graph[0u].rw_dependency(buffer.data(), 2u), 0u);
 
-    ASSERT_EQ(graph[0u].ro_dependency(buffer, 5u), 2u);
+    ASSERT_EQ(graph[0u].ro_dependency(buffer.data(), 5u), 2u);
     ASSERT_EQ(*buffer[0u], entt::type_id<int>());
     ASSERT_EQ(*buffer[1u], entt::type_id<double>());
 
     ASSERT_EQ(graph[1u].ro_count(), 0u);
     ASSERT_EQ(graph[1u].rw_count(), 2u);
 
-    ASSERT_EQ(graph[1u].ro_dependency(buffer, 2u), 0u);
-    ASSERT_EQ(graph[1u].rw_dependency(buffer, 0u), 0u);
+    ASSERT_EQ(graph[1u].ro_dependency(buffer.data(), 2u), 0u);
+    ASSERT_EQ(graph[1u].rw_dependency(buffer.data(), 0u), 0u);
 
-    ASSERT_EQ(graph[1u].rw_dependency(buffer, 5u), 2u);
+    ASSERT_EQ(graph[1u].rw_dependency(buffer.data(), 5u), 2u);
     ASSERT_EQ(*buffer[0u], entt::type_id<int>());
     ASSERT_EQ(*buffer[1u], entt::type_id<char>());
 
     ASSERT_EQ(graph[2u].ro_count(), 1u);
     ASSERT_EQ(graph[2u].rw_count(), 1u);
 
-    ASSERT_EQ(graph[2u].ro_dependency(buffer, 2u), 1u);
-    ASSERT_EQ(graph[2u].rw_dependency(buffer, 0u), 0u);
+    ASSERT_EQ(graph[2u].ro_dependency(buffer.data(), 2u), 1u);
+    ASSERT_EQ(graph[2u].rw_dependency(buffer.data(), 0u), 0u);
 
-    ASSERT_EQ(graph[2u].ro_dependency(buffer, 5u), 1u);
+    ASSERT_EQ(graph[2u].ro_dependency(buffer.data(), 5u), 1u);
     ASSERT_EQ(*buffer[0u], entt::type_id<double>());
 
-    ASSERT_EQ(graph[2u].rw_dependency(buffer, 5u), 1u);
+    ASSERT_EQ(graph[2u].rw_dependency(buffer.data(), 5u), 1u);
     ASSERT_EQ(*buffer[0u], entt::type_id<char>());
 }
 
-TEST(Organizer, ToArgsIntegrity) {
+TEST_F(Organizer, ToArgsIntegrity) {
     entt::organizer organizer;
     entt::registry registry;
 
     organizer.emplace<&to_args_integrity>();
-    registry.ctx().emplace<std::size_t>(42u);
+    registry.ctx().emplace<std::size_t>(2u);
 
     auto graph = organizer.graph();
     graph[0u].callback()(graph[0u].data(), registry);

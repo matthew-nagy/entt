@@ -9,19 +9,16 @@
 #include <vector>
 #include "../container/dense_map.hpp"
 #include "../core/compressed_pair.hpp"
+#include "../core/concepts.hpp"
 #include "../core/fwd.hpp"
 #include "../core/type_info.hpp"
-#include "../core/utility.hpp"
+#include "../stl/functional.hpp"
 #include "fwd.hpp"
 #include "sigh.hpp"
 
 namespace entt {
 
-/**
- * @cond TURN_OFF_DOXYGEN
- * Internal details not to be documented.
- */
-
+/*! @cond ENTT_INTERNAL */
 namespace internal {
 
 struct basic_dispatcher_handler {
@@ -29,13 +26,11 @@ struct basic_dispatcher_handler {
     virtual void publish() = 0;
     virtual void disconnect(void *) = 0;
     virtual void clear() noexcept = 0;
-    virtual std::size_t size() const noexcept = 0;
+    [[nodiscard]] virtual std::size_t size() const noexcept = 0;
 };
 
-template<typename Type, typename Allocator>
+template<cvref_unqualified Type, typename Allocator>
 class dispatcher_handler final: public basic_dispatcher_handler {
-    static_assert(std::is_same_v<Type, std::decay_t<Type>>, "Invalid type");
-
     using alloc_traits = std::allocator_traits<Allocator>;
     using signal_type = sigh<void(Type &), Allocator>;
     using container_type = std::vector<Type, typename alloc_traits::template rebind_alloc<Type>>;
@@ -48,13 +43,12 @@ public:
           events{allocator} {}
 
     void publish() override {
-        const auto length = events.size();
+        container_type other{};
+        other.swap(events);
 
-        for(std::size_t pos{}; pos < length; ++pos) {
-            signal.publish(events[pos]);
+        for(auto &&elem: other) {
+            signal.publish(elem);
         }
-
-        events.erase(events.cbegin(), events.cbegin() + length);
     }
 
     void disconnect(void *instance) override {
@@ -69,20 +63,20 @@ public:
         return typename signal_type::sink_type{signal};
     }
 
-    void trigger(Type event) {
+    void trigger(Type &event) {
         signal.publish(event);
     }
 
     template<typename... Args>
     void enqueue(Args &&...args) {
-        if constexpr(std::is_aggregate_v<Type>) {
+        if constexpr(std::is_aggregate_v<Type> && (sizeof...(Args) != 0u || !std::is_default_constructible_v<Type>)) {
             events.push_back(Type{std::forward<Args>(args)...});
         } else {
             events.emplace_back(std::forward<Args>(args)...);
         }
     }
 
-    std::size_t size() const noexcept override {
+    [[nodiscard]] std::size_t size() const noexcept override {
         return events.size();
     }
 
@@ -92,11 +86,7 @@ private:
 };
 
 } // namespace internal
-
-/**
- * Internal details not to be documented.
- * @endcond
- */
+/*! @endcond */
 
 /**
  * @brief Basic dispatcher implementation.
@@ -122,12 +112,11 @@ class basic_dispatcher {
     using mapped_type = std::shared_ptr<internal::basic_dispatcher_handler>;
 
     using alloc_traits = std::allocator_traits<Allocator>;
-    using container_allocator = typename alloc_traits::template rebind_alloc<std::pair<const key_type, mapped_type>>;
-    using container_type = dense_map<key_type, mapped_type, identity, std::equal_to<key_type>, container_allocator>;
+    using container_allocator = alloc_traits::template rebind_alloc<std::pair<const key_type, mapped_type>>;
+    using container_type = dense_map<key_type, mapped_type, stl::identity, std::equal_to<>, container_allocator>;
 
-    template<typename Type>
+    template<cvref_unqualified Type>
     [[nodiscard]] handler_type<Type> &assure(const id_type id) {
-        static_assert(std::is_same_v<Type, std::decay_t<Type>>, "Non-decayed types not allowed");
         auto &&ptr = pools.first()[id];
 
         if(!ptr) {
@@ -138,10 +127,8 @@ class basic_dispatcher {
         return static_cast<handler_type<Type> &>(*ptr);
     }
 
-    template<typename Type>
+    template<cvref_unqualified Type>
     [[nodiscard]] const handler_type<Type> *assure(const id_type id) const {
-        static_assert(std::is_same_v<Type, std::decay_t<Type>>, "Non-decayed types not allowed");
-
         if(auto it = pools.first().find(id); it != pools.first().cend()) {
             return static_cast<const handler_type<Type> *>(it->second.get());
         }
@@ -166,6 +153,9 @@ public:
     explicit basic_dispatcher(const allocator_type &allocator)
         : pools{allocator, allocator} {}
 
+    /*! @brief Default copy constructor, deleted on purpose. */
+    basic_dispatcher(const basic_dispatcher &) = delete;
+
     /**
      * @brief Move constructor.
      * @param other The instance to move from.
@@ -178,10 +168,19 @@ public:
      * @param other The instance to move from.
      * @param allocator The allocator to use.
      */
-    basic_dispatcher(basic_dispatcher &&other, const allocator_type &allocator) noexcept
+    basic_dispatcher(basic_dispatcher &&other, const allocator_type &allocator)
         : pools{container_type{std::move(other.pools.first()), allocator}, allocator} {
-        ENTT_ASSERT(alloc_traits::is_always_equal::value || pools.second() == other.pools.second(), "Copying a dispatcher is not allowed");
+        ENTT_ASSERT(alloc_traits::is_always_equal::value || get_allocator() == other.get_allocator(), "Copying a dispatcher is not allowed");
     }
+
+    /*! @brief Default destructor. */
+    ~basic_dispatcher() = default;
+
+    /**
+     * @brief Default copy assignment operator, deleted on purpose.
+     * @return This dispatcher.
+     */
+    basic_dispatcher &operator=(const basic_dispatcher &) = delete;
 
     /**
      * @brief Move assignment operator.
@@ -189,9 +188,8 @@ public:
      * @return This dispatcher.
      */
     basic_dispatcher &operator=(basic_dispatcher &&other) noexcept {
-        ENTT_ASSERT(alloc_traits::is_always_equal::value || pools.second() == other.pools.second(), "Copying a dispatcher is not allowed");
-
-        pools = std::move(other.pools);
+        ENTT_ASSERT(alloc_traits::is_always_equal::value || get_allocator() == other.get_allocator(), "Copying a dispatcher is not allowed");
+        swap(other);
         return *this;
     }
 
@@ -199,7 +197,7 @@ public:
      * @brief Exchanges the contents with those of a given dispatcher.
      * @param other Dispatcher to exchange the content with.
      */
-    void swap(basic_dispatcher &other) {
+    void swap(basic_dispatcher &other) noexcept {
         using std::swap;
         swap(pools, other.pools);
     }
@@ -219,7 +217,7 @@ public:
      * @return The number of pending events for the given type.
      */
     template<typename Type>
-    size_type size(const id_type id = type_hash<Type>::value()) const noexcept {
+    [[nodiscard]] size_type size(const id_type id = type_hash<Type>::value()) const noexcept {
         const auto *cpool = assure<std::decay_t<Type>>(id);
         return cpool ? cpool->size() : 0u;
     }
@@ -228,7 +226,7 @@ public:
      * @brief Returns the total number of pending events.
      * @return The total number of pending events.
      */
-    size_type size() const noexcept {
+    [[nodiscard]] size_type size() const noexcept {
         size_type count{};
 
         for(auto &&cpool: pools.first()) {
@@ -268,8 +266,8 @@ public:
      * @param value An instance of the given type of event.
      */
     template<typename Type>
-    void trigger(Type &&value = {}) {
-        trigger(type_hash<std::decay_t<Type>>::value(), std::forward<Type>(value));
+    void trigger(Type value) {
+        trigger(type_hash<std::decay_t<Type>>::value(), value);
     }
 
     /**
@@ -279,8 +277,8 @@ public:
      * @param id Name used to map the event queue within the dispatcher.
      */
     template<typename Type>
-    void trigger(const id_type id, Type &&value = {}) {
-        assure<std::decay_t<Type>>(id).trigger(std::forward<Type>(value));
+    void trigger(const id_type id, Type value) {
+        assure<std::decay_t<Type>>(id).trigger(value);
     }
 
     /**

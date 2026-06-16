@@ -2,13 +2,17 @@ BasedOnStyle: llvm
 ---
 AccessModifierOffset: -4
 AlignEscapedNewlines: DontAlign
-AllowShortBlocksOnASingleLine: Empty
+AllowShortBlocksOnASingleLine: Always
+AllowShortCompoundRequirementOnASingleLine: true
 AllowShortEnumsOnASingleLine: true
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLambdasOnASingleLine: All
 AllowShortLoopsOnASingleLine: true
 AlwaysBreakTemplateDeclarations: Yes
 BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeBraces: Attach
+BreakBeforeConceptDeclarations: Always
 BreakBeforeTernaryOperators: true
 ColumnLimit: 0
 DerivePointerAlignment: false
@@ -23,18 +27,35 @@ IncludeCategories:
     Priority: 4
   - Regex: '.*'
     Priority: 5
+IncludeIsMainRegex: "^$"
 IndentPPDirectives: AfterHash
+IndentRequiresClause: false
 IndentWidth: 4
+InsertBraces: true
+InsertNewlineAtEOF: true
 KeepEmptyLinesAtTheStartOfBlocks: false
 Language: Cpp
 PointerAlignment: Right
+RequiresClausePosition: OwnLineWithBrace
+RequiresExpressionIndentation: OuterScope
 SpaceAfterCStyleCast: false
 SpaceAfterTemplateKeyword: false
 SpaceAroundPointerQualifiers: After
 SpaceBeforeCaseColon: false
 SpaceBeforeCtorInitializerColon: false
 SpaceBeforeInheritanceColon: false
-SpaceBeforeParens: Never
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions:
+  AfterControlStatements: false
+  AfterForeachMacros: false
+  AfterFunctionDeclarationName: false
+  AfterFunctionDefinitionName: false
+  AfterIfMacros: false
+  AfterOverloadedOperator: false
+  AfterPlacementOperator: false
+  AfterRequiresInClause: true
+  AfterRequiresInExpression: false
+  BeforeNonEmptyParentheses: false
 SpaceBeforeRangeBasedForLoopColon: false
 Standard: Latest
 TabWidth: 4

@@ -1,6 +1,5 @@
 #include <utility>
 #include <gtest/gtest.h>
-#include <entt/core/type_traits.hpp>
 #include <entt/core/utility.hpp>
 
 struct functions {
@@ -11,16 +10,7 @@ struct functions {
     void bar() {}
 };
 
-TEST(Identity, Functionalities) {
-    entt::identity identity;
-    int value = 42;
-
-    ASSERT_TRUE(entt::is_transparent_v<entt::identity>);
-    ASSERT_EQ(identity(value), value);
-    ASSERT_EQ(&identity(value), &value);
-}
-
-TEST(Overload, Functionalities) {
+TEST(Utility, Overload) {
     ASSERT_EQ(entt::overload<void(int)>(&functions::foo), static_cast<void (*)(int)>(&functions::foo));
     ASSERT_EQ(entt::overload<void()>(&functions::foo), static_cast<void (*)()>(&functions::foo));
 
@@ -28,30 +18,31 @@ TEST(Overload, Functionalities) {
     ASSERT_EQ(entt::overload<void()>(&functions::bar), static_cast<void (functions::*)()>(&functions::bar));
 
     functions instance;
+    instance.bar(0); // makes the linter happy
 
-    ASSERT_NO_FATAL_FAILURE(entt::overload<void(int)>(&functions::foo)(0));
-    ASSERT_NO_FATAL_FAILURE(entt::overload<void()>(&functions::foo)());
+    ASSERT_NO_THROW(entt::overload<void(int)>(&functions::foo)(0));
+    ASSERT_NO_THROW(entt::overload<void()>(&functions::foo)());
 
-    ASSERT_NO_FATAL_FAILURE((instance.*entt::overload<void(int)>(&functions::bar))(0));
-    ASSERT_NO_FATAL_FAILURE((instance.*entt::overload<void()>(&functions::bar))());
+    ASSERT_NO_THROW((instance.*entt::overload<void(int)>(&functions::bar))(0));
+    ASSERT_NO_THROW((instance.*entt::overload<void()>(&functions::bar))());
 }
 
-TEST(Overloaded, Functionalities) {
+TEST(Utility, Overloaded) {
     int iv = 0;
     char cv = '\0';
 
-    entt::overloaded func{
+    const entt::overloaded func{
         [&iv](int value) { iv = value; },
         [&cv](char value) { cv = value; }};
 
-    func(42);
+    func(2);
     func('c');
 
-    ASSERT_EQ(iv, 42);
+    ASSERT_EQ(iv, 2);
     ASSERT_EQ(cv, 'c');
 }
 
-TEST(YCombinator, Functionalities) {
+TEST(Utility, YCombinator) {
     entt::y_combinator gauss([](const auto &self, auto value) -> unsigned int {
         return value ? (value + self(value - 1u)) : 0;
     });

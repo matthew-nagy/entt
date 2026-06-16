@@ -1,36 +1,30 @@
 #ifndef ENTT_META_CTX_HPP
 #define ENTT_META_CTX_HPP
 
+#include <memory>
 #include "../container/dense_map.hpp"
 #include "../core/fwd.hpp"
-#include "../core/utility.hpp"
+#include "../stl/functional.hpp"
+#include "fwd.hpp"
 
 namespace entt {
 
-class meta_ctx;
-
-/**
- * @cond TURN_OFF_DOXYGEN
- * Internal details not to be documented.
- */
-
+/*! @cond ENTT_INTERNAL */
 namespace internal {
 
 struct meta_type_node;
 
 struct meta_context {
-    dense_map<id_type, meta_type_node, identity> value{};
+    using container_type = dense_map<id_type, std::unique_ptr<meta_type_node>, stl::identity>;
 
-    [[nodiscard]] static inline meta_context &from(meta_ctx &ctx);
-    [[nodiscard]] static inline const meta_context &from(const meta_ctx &ctx);
+    container_type bucket;
+
+    [[nodiscard]] inline static meta_context &from(meta_ctx &);
+    [[nodiscard]] inline static const meta_context &from(const meta_ctx &);
 };
 
 } // namespace internal
-
-/**
- * Internal details not to be documented.
- * @endcond
- */
+/*! @endcond */
 
 /*! @brief Disambiguation tag for constructors and the like. */
 class meta_ctx_arg_t final {};
@@ -40,15 +34,11 @@ inline constexpr meta_ctx_arg_t meta_ctx_arg{};
 
 /*! @brief Opaque meta context type. */
 class meta_ctx: private internal::meta_context {
-    /*! @brief Attorney idiom like model to access the base class. */
+    // attorney idiom like model to access the base class
     friend struct internal::meta_context;
 };
 
-/**
- * @cond TURN_OFF_DOXYGEN
- * Internal details not to be documented.
- */
-
+/*! @cond ENTT_INTERNAL */
 [[nodiscard]] inline internal::meta_context &internal::meta_context::from(meta_ctx &ctx) {
     return ctx;
 }
@@ -56,11 +46,7 @@ class meta_ctx: private internal::meta_context {
 [[nodiscard]] inline const internal::meta_context &internal::meta_context::from(const meta_ctx &ctx) {
     return ctx;
 }
-
-/**
- * Internal details not to be documented.
- * @endcond
- */
+/*! @endcond */
 
 } // namespace entt
 

@@ -1,8 +1,5 @@
 # Frequently Asked Questions
 
-<!--
-@cond TURN_OFF_DOXYGEN
--->
 # Table of Contents
 
 * [Introduction](#introduction)
@@ -10,20 +7,17 @@
   * [Why is my debug build on Windows so slow?](#why-is-my-debug-build-on-windows-so-slow)
   * [How can I represent hierarchies with my components?](#how-can-i-represent-hierarchies-with-my-components)
   * [Custom entity identifiers: yay or nay?](#custom-entity-identifiers-yay-or-nay)
-  * [Warning C4307: integral constant overflow](#warning-C4307-integral-constant-overflow)
-  * [Warning C4003: the min, the max and the macro](#warning-C4003-the-min-the-max-and-the-macro)
+  * [Warning C4003: the min, the max and the macro](#warning-c4003-the-min-the-max-and-the-macro)
   * [The standard and the non-copyable types](#the-standard-and-the-non-copyable-types)
   * [Which functions trigger which signals](#which-functions-trigger-which-signals)
-<!--
-@endcond TURN_OFF_DOXYGEN
--->
+  * [Duplicate storage for the same component](#duplicate-storage-for-the-same-component)
 
 # Introduction
 
-This is a constantly updated section where I'm trying to put the answers to the
+This is a constantly updated section where I am trying to put the answers to the
 most frequently asked questions.<br/>
-If you don't find your answer here, there are two cases: nobody has done it yet
-or this section needs updating. In both cases, you can
+If you do not find your answer here, there are two cases: nobody has done it
+yet, or this section needs updating. In both cases, you can
 [open a new issue](https://github.com/skypjack/entt/issues/new) or enter either
 the [gitter channel](https://gitter.im/skypjack/entt) or the
 [discord server](https://discord.gg/5BjPWBd) to ask for help.<br/>
@@ -35,12 +29,12 @@ part of the documentation.
 ## Why is my debug build on Windows so slow?
 
 `EnTT` is an experimental project that I also use to keep me up-to-date with the
-latest revision of the language and the standard library. For this reason, it's
-likely that some classes you're working with are using standard containers under
-the hood.<br/>
-Unfortunately, it's known that the standard containers aren't particularly
+latest revision of the language and the standard library. For this reason, it is
+likely that some classes you are working with are using standard containers
+under the hood.<br/>
+Unfortunately, it is known that the standard containers are not particularly
 performing in debugging (the reasons for this go beyond this document) and are
-even less so on Windows apparently. Fortunately this can also be mitigated a
+even less so on Windows, apparently. Fortunately, this can also be mitigated a
 lot, achieving good results in many cases.
 
 First of all, there are two things to do in a Windows project:
@@ -59,7 +53,7 @@ macro to disable internal debug checks in `EnTT`:
 #define ENTT_ASSERT(...) ((void)0)
 ```
 
-These asserts are introduced to help the users but they require to access to the
+These asserts are introduced to help the users, but they require access to the
 underlying containers and therefore risk ruining the performance in some cases.
 
 With these changes, debug performance should increase enough in most cases. If
@@ -70,15 +64,15 @@ preferably `O1`.
 
 This is one of the first questions that anyone makes when starting to work with
 the entity-component-system architectural pattern.<br/>
-There are several approaches to the problem and the best one depends mainly on
-the real problem one is facing. In all cases, how to do it doesn't strictly
+There are several approaches to the problem, and the best one depends mainly on
+the real problem one is facing. In all cases, how to do it does not strictly
 depend on the library in use, but the latter certainly allows or not different
 techniques depending on how the data are laid out.
 
 I tried to describe some of the approaches that fit well with the model of
 `EnTT`. [This](https://skypjack.github.io/2019-06-25-ecs-baf-part-4/) is the
 first post of a series that tries to _explore_ the problem. More will probably
-come in future.<br/>
+come in the future.<br/>
 In addition, `EnTT` also offers the possibility to create stable storage types
 and therefore have pointer stability for one, all or some components. This is by
 far the most convenient solution when it comes to creating hierarchies and
@@ -89,7 +83,7 @@ what concerns the `component_traits` class for further details.
 
 Custom entity identifiers are definitely a good idea in two cases at least:
 
-* If `std::uint32_t` isn't large enough for your purposes, since this is the
+* If `std::uint32_t` is not large enough for your purposes, since this is the
   underlying type of `entt::entity`.
 
 * If you want to avoid conflicts when using multiple registries.
@@ -104,40 +98,14 @@ enum class entity: std::uint32_t {};
 
 There is no limit to the number of identifiers that can be defined.
 
-## Warning C4307: integral constant overflow
-
-According to [this](https://github.com/skypjack/entt/issues/121) issue, using a
-hashed string under VS (toolset v141) could generate a warning.<br/>
-First of all, I want to reassure you: it's expected and harmless. However, it
-can be annoying.
-
-To suppress it and if you don't want to suppress all the other warnings as well,
-here is a workaround in the form of a macro:
-
-```cpp
-#if defined(_MSC_VER)
-#define HS(str) __pragma(warning(suppress:4307)) entt::hashed_string{str}
-#else
-#define HS(str) entt::hashed_string{str}
-#endif
-```
-
-With an example of use included:
-
-```cpp
-constexpr auto identifier = HS("my/resource/identifier");
-```
-
-Thanks to [huwpascoe](https://github.com/huwpascoe) for the courtesy.
-
 ## Warning C4003: the min, the max and the macro
 
 On Windows, a header file defines two macros `min` and `max` which may result in
 conflicts with their counterparts in the standard library and therefore in
 errors during compilation.
 
-It's a pretty big problem but fortunately it's not a problem of `EnTT` and there
-is a fairly simple solution to it.<br/>
+It is a pretty big problem. However, fortunately it is not a problem of `EnTT`
+and there is a fairly simple solution to it.<br/>
 It consists in defining the `NOMINMAX` macro before including any other header
 so as to get rid of the extra definitions:
 
@@ -151,9 +119,9 @@ more details.
 ## The standard and the non-copyable types
 
 `EnTT` uses internally the trait `std::is_copy_constructible_v` to check if a
-component is actually copyable. However, this trait doesn't really check whether
-a type is actually copyable. Instead, it just checks that a suitable copy
-constructor and copy operator exist.<br/>
+component is actually copyable. However, this trait does not really check
+whether a type is actually copyable. Instead, it just checks that a suitable
+copy constructor and copy operator exist.<br/>
 This can lead to surprising results due to some idiosyncrasies of the standard.
 
 For example, `std::vector` defines a copy constructor that is conditionally
@@ -193,9 +161,9 @@ to mitigate the problem makes it manageable.
 
 ## Which functions trigger which signals
 
-The `registry` class offers three signals that are emitted following specific
+Storage classes offer three _signals_ that are emitted following specific
 operations. Maybe not everyone knows what these operations are, though.<br/>
-If this isn't clear, below you can find a _vademecum_ for this purpose:
+If this is not clear, below you can find a _vademecum_ for this purpose:
 
 * `on_created` is invoked when a component is first added (neither modified nor 
   replaced) to an entity.
@@ -206,10 +174,35 @@ If this isn't clear, below you can find a _vademecum_ for this purpose:
   from an entity.
 
 Among the most controversial functions can be found `emplace_or_replace` and
-`destroy`. However, following the above rules, it's quite simple to know what 
+`destroy`. However, following the above rules, it is quite simple to know what 
 will happen.<br/>
 In the first case, `on_created` is invoked if the entity has not the component,
 otherwise the latter is replaced and therefore `on_update` is triggered. As for
 the second case, components are removed from their entities and thus freed when
 they are recycled. It means that `on_destroyed` is triggered for every component 
 owned by the entity that is destroyed.
+
+## Duplicate storage for the same component
+
+It is rare, but you can see double sometimes, especially when it comes to
+storage. This can be caused by a conflict in the hash assigned to the various
+component types (one of a kind) or by bugs in your compiler
+([more common](https://github.com/skypjack/entt/issues/1063) apparently).<br/>
+Regardless of the cause, `EnTT` offers a customization point that also serves as
+a solution in this case:
+
+```cpp
+template<>
+struct entt::type_hash<Type> final {
+    [[nodiscard]] static consteval id_type value() noexcept {
+        return hashed_string::value("Type");
+    }
+
+    [[nodiscard]] consteval operator id_type() const noexcept {
+        return value();
+    }
+};
+```
+
+Specializing `type_hash` directly bypasses the default implementation offered by
+`EnTT`, thus avoiding any possible conflicts or compiler bugs.
